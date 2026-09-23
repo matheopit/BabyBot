@@ -238,9 +238,9 @@ static esp_err_t touch_cst328_reset(esp_lcd_touch_handle_t tp) {
 		return ESP_OK;
 
 	/* RST must be driven as output, otherwise gpio_set_level has no effect */
-	const gpio_config_t rst_gpio_config = {
-		.mode = GPIO_MODE_OUTPUT,
-		.pin_bit_mask = BIT64(tp->config.rst_gpio_num)};
+	const gpio_config_t rst_gpio_config = {.mode = GPIO_MODE_OUTPUT,
+										   .pin_bit_mask =
+											   BIT64(tp->config.rst_gpio_num)};
 	ESP_RETURN_ON_ERROR(gpio_config(&rst_gpio_config), TAG,
 						"GPIO config failed");
 

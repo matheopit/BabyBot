@@ -13,7 +13,7 @@ void audio_resume(void) { Music_resume(); }
 /* arrete completement la lecture */
 void audio_stop(void) {}
 /* position de lecture actuelle, en secondes */
-uint32_t audio_get_position_sec(void) { return 0;  /*Music_Elapsed();*/ }
+uint32_t audio_get_position_sec(void) { return 0; /*Music_Elapsed();*/ }
 /* duree totale du morceau charge, en secondes (0 si inconnue) */
 uint32_t audio_get_duration_sec(void) { return 0; /*Music_Duration();*/ }
 

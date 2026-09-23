@@ -21,8 +21,8 @@
 // I2C mode needs only SDA, SCL and IRQ pins. RESET pin will be used if valid.
 // IRQ pin can be used in polling mode or in interrupt mode. Use menuconfig to
 // select mode.
-#define SCL_PIN    (10)
-#define SDA_PIN    (11)
+#define SCL_PIN (10)
+#define SDA_PIN (11)
 #define RESET_PIN (-1)
 #define IRQ_PIN (-1)
 
@@ -59,7 +59,7 @@ static pn532_io_t pn532_io;
 
 void init_nfc() {
 	esp_err_t err;
-    pn532_release(&pn532_io);
+	pn532_release(&pn532_io);
 	printf("init_nfc\n");
 
 #if 0
@@ -127,7 +127,7 @@ void init_nfc() {
 }
 
 void nfc_loop() {
-	esp_err_t err;	
+	esp_err_t err;
 	while (1) {
 		uint8_t uid[] = {0, 0, 0, 0,
 						 0, 0, 0}; // Buffer to store the returned UID
@@ -139,7 +139,7 @@ void nfc_loop() {
 		// if the uid is 4 bytes (Mifare Classic) or 7 bytes (Mifare Ultralight)
 		err = pn532_read_passive_target_id(
 			&pn532_io, PN532_BRTY_ISO14443A_106KBPS, uid, &uid_length, 0);
-        if (ESP_OK == err) {
+		if (ESP_OK == err) {
 			// Display some basic information about the card
 			ESP_LOGI(TAG, "\nFound an ISO14443A card");
 			ESP_LOGI(TAG, "UID Length: %d bytes", uid_length);
@@ -190,7 +190,7 @@ void nfc_loop() {
 				}
 			}
 			vTaskDelay(1000 / portTICK_PERIOD_MS);
-		}	
+		}
 	}
-	end:;
+end:;
 }

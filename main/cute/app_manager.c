@@ -11,12 +11,12 @@ static const char *TAG = "APP_MANAGER";
 
 // État global
 static mood_t g_mood = MOOD_HAPPY;
-static alarm_t g_alarm = {7, 15,0x1F, false};
+static alarm_t g_alarm = {7, 15, 0x1F, false};
 
 // Widgets LVGL externes
 extern lv_obj_t *eyes_canvas;
-//extern void eyes_set_state(lv_obj_t *canvas, mood_t mood);
-//extern void ui_alarm_update(void);
+// extern void eyes_set_state(lv_obj_t *canvas, mood_t mood);
+// extern void ui_alarm_update(void);
 
 // ===============================
 // INIT
@@ -30,10 +30,10 @@ void app_manager_init(void) {
 	g_alarm.minute = 30;
 	g_alarm.days = 0x1F;
 	g_alarm.enabled = false;
-   
+
 	// UI initiale
-	//eyes_set_state(eyes_canvas, g_mood);
-	//ui_alarm_update();
+	// eyes_set_state(eyes_canvas, g_mood);
+	// ui_alarm_update();
 }
 
 // ===============================
@@ -41,7 +41,7 @@ void app_manager_init(void) {
 // ===============================
 void app_manager_set_mood(mood_t mood) {
 	g_mood = mood;
-	//eyes_set_state(eyes_canvas, mood);
+	// eyes_set_state(eyes_canvas, mood);
 
 	ESP_LOGI(TAG, "Humeur mise à jour : %d", mood);
 }
@@ -49,14 +49,14 @@ void app_manager_set_mood(mood_t mood) {
 // ===============================
 // ALARM
 // ===============================
-void app_manager_set_alarm(int hour, int minute, int days , bool enabled) {
+void app_manager_set_alarm(int hour, int minute, int days, bool enabled) {
 	g_alarm.hour = hour;
 	g_alarm.minute = minute;
 	g_alarm.enabled = enabled;
-    g_alarm.days = days;
+	g_alarm.days = days;
 	ESP_LOGI(TAG, "Réveil : %02d:%02d (enabled=%d)", hour, minute, enabled);
 
-	//ui_alarm_update();
+	// ui_alarm_update();
 }
 
 // ===============================
@@ -87,7 +87,7 @@ static void app_manager_parse_json(const char *json) {
 		int minute = cJSON_GetObjectItem(alarm, "minute")->valueint;
 		bool enabled = cJSON_IsTrue(cJSON_GetObjectItem(alarm, "enabled"));
 
-		app_manager_set_alarm(hour, minute,0, enabled);
+		app_manager_set_alarm(hour, minute, 0, enabled);
 	}
 
 	cJSON_Delete(root);
@@ -209,7 +209,4 @@ void app_manager_setup_time() {
 	xQueueSend(app_msg_queue, &msg, 0);
 }
 
-
-alarm_t * getAlarm(){
-	return &g_alarm;
-}
+alarm_t *getAlarm() { return &g_alarm; }

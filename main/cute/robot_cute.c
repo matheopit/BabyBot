@@ -147,9 +147,7 @@ static lv_obj_t *create_square_eye(lv_obj_t *parent, lv_coord_t x, lv_coord_t y,
 
 lv_obj_t *hand_right;
 
-static void hand_right_anim_cb(void *obj, int32_t v) {
-	lv_obj_set_x(obj, v);
-}
+static void hand_right_anim_cb(void *obj, int32_t v) { lv_obj_set_x(obj, v); }
 
 void animate_robot_hand_right(void) {
 	lv_anim_t a;
@@ -196,7 +194,7 @@ static lv_obj_t *create_hand(lv_obj_t *parent, int posx, int posy) {
 		lv_obj_set_style_bg_opa(finger, LV_OPA_COVER, 0);
 		lv_obj_set_pos(finger,
 					   +6 + i * 10, // x
-					   2);		// juste au-dessus de la paume
+					   2);			// juste au-dessus de la paume
 	}
 	return container;
 }
