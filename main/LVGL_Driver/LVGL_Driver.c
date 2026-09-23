@@ -104,8 +104,8 @@ void LVGL_Init(void)
 
 	ESP_LOGI(TAG_LVGL, "Register display driver to LVGL");
     lv_disp_drv_init(&disp_drv);                                                                        // Create a new screen object and initialize the associated device
-    disp_drv.hor_res = EXAMPLE_LCD_H_RES;             
-    disp_drv.ver_res = EXAMPLE_LCD_V_RES;                                                     // Horizontal pixel count
+    disp_drv.hor_res = LCD_H_RES;             
+    disp_drv.ver_res = LCD_V_RES;                                                     // Horizontal pixel count
     // disp_drv.rotated = LV_DISP_ROT_90; // 图像旋转                                                            // Vertical axis pixel count
     disp_drv.flush_cb = lvgl_flush_cb;                                                          // Function : copy a buffer's content to a specific area of the display
     disp_drv.drv_update_cb = lvgl_port_update_callback;                                         // Function : Rotate display and touch, when rotated screen in LVGL. Called when driver parameters are updated. 

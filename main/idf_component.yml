@@ -4,3 +4,7 @@ dependencies:
   chmorgan/esp-audio-player: "==2.0.0"
   chmorgan/esp-libhelix-mp3: "==1.0.3"
   garag/esp-idf-pn532: "*"
+  espressif/cjson:
+    version: "^1.7.19"
+    rules:
+      - if: "idf_version >=6.0"

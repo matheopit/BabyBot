@@ -31,8 +31,8 @@
 #define EXAMPLE_PIN_NUM_LCD_RST        39
 #define EXAMPLE_PIN_NUM_BK_LIGHT       5
 // The pixel number in horizontal and vertical
-#define EXAMPLE_LCD_H_RES              240
-#define EXAMPLE_LCD_V_RES              320
+#define LCD_H_RES              240
+#define LCD_V_RES              320
 // Bit number used to represent command and parameter
 #define EXAMPLE_LCD_CMD_BITS           8
 #define EXAMPLE_LCD_PARAM_BITS         8

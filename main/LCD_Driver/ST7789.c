@@ -13,7 +13,7 @@ void LCD_Init(void)
         .miso_io_num = EXAMPLE_PIN_NUM_MISO,                                            
         .quadwp_io_num = -1,                                                            
         .quadhd_io_num = -1,                                                            
-        .max_transfer_sz = EXAMPLE_LCD_H_RES * EXAMPLE_LCD_V_RES * sizeof(uint16_t),    
+        .max_transfer_sz = LCD_H_RES * LCD_V_RES * sizeof(uint16_t),    
     };
     ESP_ERROR_CHECK(spi_bus_initialize(LCD_HOST, &buscfg, SPI_DMA_CH_AUTO));            
 
@@ -35,7 +35,7 @@ void LCD_Init(void)
 
     esp_lcd_panel_dev_st7789t_config_t panel_config = {
         .reset_gpio_num = EXAMPLE_PIN_NUM_LCD_RST,
-        .rgb_endian = LCD_RGB_ENDIAN_BGR,
+        .rgb_ele_order = LCD_RGB_ELEMENT_ORDER_BGR,
         .bits_per_pixel = 16,
     };
     ESP_LOGI(TAG_LCD, "Install ST7789 panel driver");
