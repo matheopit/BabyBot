@@ -24,3 +24,4 @@ void WIFI_Init(void *arg);
 uint16_t WIFI_Scan(void);
 void BLE_Init(void *arg);
 uint16_t BLE_Scan(void);
+bool read_wifi_json(const char* directory, const char* fileName, wifi_sta_config_t *out);

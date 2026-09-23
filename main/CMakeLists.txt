@@ -11,6 +11,7 @@ idf_component_register(
                               "./BAT_Driver/BAT_Driver.c"
                               "./PWR_Key/PWR_Key.c"
                               "./Wireless/Wireless.c"
+                                "./Wireless/wireless_utils.c"
                               "./NFC_Tag/ntag_read.c"
                               "./cute/robot_cute.c"
                               "./cute/wakeup_settings.c"

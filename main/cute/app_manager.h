@@ -29,6 +29,7 @@ typedef enum {
 typedef struct {
     int hour;
     int minute;
+    int days;
     bool enabled;
 } alarm_t;
 
@@ -41,6 +42,7 @@ typedef enum {
 void app_manager_init(void);
 void app_manager_notify(app_event_t event, void *data);
 void app_manager_set_mood(mood_t mood);
-void app_manager_set_alarm(int hour, int minute, bool enabled);
+void app_manager_set_alarm(int hour, int minute,int days, bool enabled);
 void app_manager_choose_frame(frame_select_t frame);
 void app_manager_setup_time();
+alarm_t * getAlarm();
