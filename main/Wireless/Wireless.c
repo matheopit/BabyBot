@@ -60,15 +60,16 @@ void WIFI_Init(void *arg) {
 	esp_wifi_init(&cfg);
 	esp_wifi_set_mode(WIFI_MODE_STA);
 
+	esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID,
+										&wifi_event_handler, NULL, NULL);
 	esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP,
 										&wifi_event_handler, NULL,
 										&instance_got_ip);
 
-	wifi_config_t sta_cfg;
+	wifi_config_t sta_cfg = {0};
 	read_wifi_json("/sdcard", "wifi.txt",&sta_cfg.sta);
 	esp_wifi_set_config(WIFI_IF_STA, &sta_cfg);
-	esp_wifi_start();
-	esp_wifi_connect();
+	esp_wifi_start(); // connect is issued on WIFI_EVENT_STA_START
 	// WIFI_NUM = WIFI_Scan();
 	// printf("WIFI:%d\r\n",WIFI_NUM);
 

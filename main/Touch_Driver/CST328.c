@@ -234,14 +234,26 @@ static esp_err_t esp_lcd_touch_cst328_del(esp_lcd_touch_handle_t tp) {
 static esp_err_t touch_cst328_reset(esp_lcd_touch_handle_t tp) {
 	assert(tp != NULL);
 
-	ESP_RETURN_ON_ERROR(
-		gpio_set_level(tp->config.rst_gpio_num, !tp->config.levels.reset), TAG,
-		"GPIO set level error!");
-	vTaskDelay(pdMS_TO_TICKS(10));
+	if (tp->config.rst_gpio_num == GPIO_NUM_NC)
+		return ESP_OK;
+
+	/* RST must be driven as output, otherwise gpio_set_level has no effect */
+	const gpio_config_t rst_gpio_config = {
+		.mode = GPIO_MODE_OUTPUT,
+		.pin_bit_mask = BIT64(tp->config.rst_gpio_num)};
+	ESP_RETURN_ON_ERROR(gpio_config(&rst_gpio_config), TAG,
+						"GPIO config failed");
+
+	/* Assert reset, then release it (levels.reset is the active level) */
 	ESP_RETURN_ON_ERROR(
 		gpio_set_level(tp->config.rst_gpio_num, tp->config.levels.reset), TAG,
 		"GPIO set level error!");
 	vTaskDelay(pdMS_TO_TICKS(10));
+	ESP_RETURN_ON_ERROR(
+		gpio_set_level(tp->config.rst_gpio_num, !tp->config.levels.reset), TAG,
+		"GPIO set level error!");
+	/* Wait for the controller to boot before talking to it */
+	vTaskDelay(pdMS_TO_TICKS(50));
 
 	return ESP_OK;
 }

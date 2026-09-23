@@ -69,7 +69,6 @@ bool read_wifi_json(const char* directory, const char* fileName, wifi_sta_config
     out->password[sizeof(out->password) - 1] = '\0';
 
     ESP_LOGI(TAG, "SSID lu: %s", out->ssid);
-    ESP_LOGI(TAG, "Password lu: %s", out->password);
 
     cJSON_Delete(root);
     return true;
