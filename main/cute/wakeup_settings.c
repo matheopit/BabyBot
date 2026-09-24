@@ -47,10 +47,9 @@ static void btn_minus_event_handler(lv_event_t *event) {
 	}
 }
 
-static void btn_ok_event_handler(lv_event_t *event) {
+static void btn_next_event_handler(lv_event_t *event) {
 	if (event->code == LV_EVENT_CLICKED) {
-		set_wakeup_config();
-		draw_robot();
+		ui_alarm_sound_screen_create();
 	}
 }
 
@@ -200,15 +199,15 @@ void ui_alarm_screen_create(void) {
 			lv_obj_align(day_checks[i], LV_ALIGN_TOP_LEFT, col * 70, row * 35);
 		}
 
-		// Bouton OK
-		lv_obj_t *btn_ok = lv_btn_create(alarm_screen);
-		lv_obj_add_style(btn_ok, &style_btn, 0);
-		lv_obj_set_size(btn_ok, 140, 40);
-		lv_obj_align(btn_ok, LV_ALIGN_BOTTOM_MID, 0, -10);
+		// Bouton Suivant
+		lv_obj_t *btn_next = lv_btn_create(alarm_screen);
+		lv_obj_add_style(btn_next, &style_btn, 0);
+		lv_obj_set_size(btn_next, 140, 40);
+		lv_obj_align(btn_next, LV_ALIGN_BOTTOM_MID, 0, -10);
 
-		lv_obj_t *lbl_ok = lv_label_create(btn_ok);
-		lv_label_set_text(lbl_ok, "Valider");
-		lv_obj_center(lbl_ok);
+		lv_obj_t *lbl_next = lv_label_create(btn_next);
+		lv_label_set_text(lbl_next, "Suivant");
+		lv_obj_center(lbl_next);
 
 		// ============================
 		// Callbacks + / -
@@ -217,7 +216,7 @@ void ui_alarm_screen_create(void) {
 							NULL);
 		lv_obj_add_event_cb(btn_minus, btn_minus_event_handler,
 							LV_EVENT_CLICKED, NULL);
-		lv_obj_add_event_cb(btn_ok, btn_ok_event_handler, LV_EVENT_CLICKED,
+		lv_obj_add_event_cb(btn_next, btn_next_event_handler, LV_EVENT_CLICKED,
 							NULL);
 	}
 	update_toggle();

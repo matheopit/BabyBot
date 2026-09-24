@@ -7,6 +7,7 @@
 
 #define COLOR_MAIN 0x4DA6FF
 #define MSG_TIME_READY 1
+#define ALARM_SOUND_PATH_LEN 128
 extern QueueHandle_t app_msg_queue;
 
 typedef enum { MOOD_ANGRY, MOOD_HAPPY, MOOD_TIRED } mood_t;
@@ -25,6 +26,7 @@ typedef struct {
 	int minute;
 	int days; // bitmask : bit 0 = lundi, bit 1 = mardi, ... bit 6 = dimanche
 	bool enabled;
+	char sound[ALARM_SOUND_PATH_LEN]; // chemin du mp3 joué au réveil ("" = aucun)
 } alarm_t;
 
 typedef enum {

@@ -18,7 +18,7 @@ static const char *TAG = "APP_MANAGER";
 
 // État global
 static mood_t g_mood = MOOD_HAPPY;
-static alarm_t g_alarm = {7, 15, 0x1F, false};
+static alarm_t g_alarm = {7, 15, 0x1F, false, ""};
 
 static void app_manager_parse_json(const char *json);
 static void app_manager_load_config(void);
@@ -116,6 +116,13 @@ static void app_manager_parse_json(const char *json) {
 
 			app_manager_set_alarm(hour->valueint, minute->valueint, days_mask,
 								  enabled);
+
+			cJSON *sound = cJSON_GetObjectItem(alarm, "sound");
+			if (cJSON_IsString(sound)) {
+				strncpy(g_alarm.sound, sound->valuestring,
+						sizeof(g_alarm.sound) - 1);
+				g_alarm.sound[sizeof(g_alarm.sound) - 1] = '\0';
+			}
 		} else {
 			ESP_LOGE(TAG, "Alarme invalide");
 		}
@@ -296,6 +303,7 @@ bool set_wakeup_config(void) {
 	cJSON_AddNumberToObject(alarm, "minute", g_alarm.minute);
 	cJSON_AddNumberToObject(alarm, "days", g_alarm.days & 0x7F); // bit 0 = lundi
 	cJSON_AddBoolToObject(alarm, "enabled", g_alarm.enabled);
+	cJSON_AddStringToObject(alarm, "sound", g_alarm.sound);
 
 	char *json = cJSON_Print(root);
 	cJSON_Delete(root);
