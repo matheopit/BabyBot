@@ -23,7 +23,7 @@ typedef enum {
 typedef struct {
 	int hour;
 	int minute;
-	int days;
+	int days; // bitmask : bit 0 = lundi, bit 1 = mardi, ... bit 6 = dimanche
 	bool enabled;
 } alarm_t;
 
@@ -40,3 +40,4 @@ void app_manager_set_alarm(int hour, int minute, int days, bool enabled);
 void app_manager_choose_frame(frame_select_t frame);
 void app_manager_setup_time();
 alarm_t *getAlarm();
+bool set_wakeup_config(void);

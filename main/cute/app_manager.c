@@ -6,12 +6,22 @@
 #include "lwip/apps/sntp.h"
 #include "robot_cute.h"
 #include "wakeup_settings.h"
+#include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
 static const char *TAG = "APP_MANAGER";
+
+#define CONFIG_DIR "/sdcard/data"
+#define CONFIG_FILE_PATH CONFIG_DIR "/config.json"
 
 // État global
 static mood_t g_mood = MOOD_HAPPY;
 static alarm_t g_alarm = {7, 15, 0x1F, false};
+
+static void app_manager_parse_json(const char *json);
+static void app_manager_load_config(void);
 
 // Widgets LVGL externes
 extern lv_obj_t *eyes_canvas;
@@ -30,6 +40,20 @@ void app_manager_init(void) {
 	g_alarm.minute = 30;
 	g_alarm.days = 0x1F;
 	g_alarm.enabled = false;
+
+	// Répertoire de config sur la carte SD
+	struct stat st;
+	if (stat(CONFIG_DIR, &st) != 0) {
+		if (mkdir(CONFIG_DIR, 0775) == 0) {
+			ESP_LOGI(TAG, "Répertoire %s créé", CONFIG_DIR);
+		} else {
+			ESP_LOGE(TAG, "Impossible de créer %s : %s", CONFIG_DIR,
+					 strerror(errno));
+		}
+	}
+
+	// Réglages sauvegardés (écrase les valeurs par défaut si le fichier existe)
+	app_manager_load_config();
 
 	// UI initiale
 	// eyes_set_state(eyes_canvas, g_mood);
@@ -83,14 +107,55 @@ static void app_manager_parse_json(const char *json) {
 	// Alarm
 	cJSON *alarm = cJSON_GetObjectItem(root, "alarm");
 	if (alarm) {
-		int hour = cJSON_GetObjectItem(alarm, "hour")->valueint;
-		int minute = cJSON_GetObjectItem(alarm, "minute")->valueint;
-		bool enabled = cJSON_IsTrue(cJSON_GetObjectItem(alarm, "enabled"));
+		cJSON *hour = cJSON_GetObjectItem(alarm, "hour");
+		cJSON *minute = cJSON_GetObjectItem(alarm, "minute");
+		if (cJSON_IsNumber(hour) && cJSON_IsNumber(minute)) {
+			bool enabled = cJSON_IsTrue(cJSON_GetObjectItem(alarm, "enabled"));
+			cJSON *days = cJSON_GetObjectItem(alarm, "days");
+			int days_mask = cJSON_IsNumber(days) ? (days->valueint & 0x7F) : 0;
 
-		app_manager_set_alarm(hour, minute, 0, enabled);
+			app_manager_set_alarm(hour->valueint, minute->valueint, days_mask,
+								  enabled);
+		} else {
+			ESP_LOGE(TAG, "Alarme invalide");
+		}
 	}
 
 	cJSON_Delete(root);
+}
+
+// ===============================
+// CHARGEMENT CONFIG
+// ===============================
+static void app_manager_load_config(void) {
+	FILE *f = fopen(CONFIG_FILE_PATH, "r");
+	if (!f) {
+		ESP_LOGI(TAG, "Pas de %s, valeurs par défaut", CONFIG_FILE_PATH);
+		return;
+	}
+
+	fseek(f, 0, SEEK_END);
+	long size = ftell(f);
+	fseek(f, 0, SEEK_SET);
+	if (size <= 0) {
+		ESP_LOGE(TAG, "%s vide", CONFIG_FILE_PATH);
+		fclose(f);
+		return;
+	}
+
+	char *buffer = malloc(size + 1);
+	if (!buffer) {
+		ESP_LOGE(TAG, "malloc impossible");
+		fclose(f);
+		return;
+	}
+
+	size_t len = fread(buffer, 1, size, f);
+	buffer[len] = '\0';
+	fclose(f);
+
+	app_manager_parse_json(buffer);
+	free(buffer);
 }
 
 // ===============================
@@ -210,3 +275,52 @@ void app_manager_setup_time() {
 }
 
 alarm_t *getAlarm() { return &g_alarm; }
+
+// ===============================
+// SAUVEGARDE CONFIG
+// ===============================
+bool set_wakeup_config(void) {
+	cJSON *root = cJSON_CreateObject();
+	if (!root) {
+		ESP_LOGE(TAG, "cJSON_CreateObject impossible");
+		return false;
+	}
+
+	cJSON *alarm = cJSON_AddObjectToObject(root, "alarm");
+	if (!alarm) {
+		ESP_LOGE(TAG, "cJSON_AddObjectToObject impossible");
+		cJSON_Delete(root);
+		return false;
+	}
+	cJSON_AddNumberToObject(alarm, "hour", g_alarm.hour);
+	cJSON_AddNumberToObject(alarm, "minute", g_alarm.minute);
+	cJSON_AddNumberToObject(alarm, "days", g_alarm.days & 0x7F); // bit 0 = lundi
+	cJSON_AddBoolToObject(alarm, "enabled", g_alarm.enabled);
+
+	char *json = cJSON_Print(root);
+	cJSON_Delete(root);
+	if (!json) {
+		ESP_LOGE(TAG, "cJSON_Print impossible");
+		return false;
+	}
+
+	FILE *f = fopen(CONFIG_FILE_PATH, "w");
+	if (!f) {
+		ESP_LOGE(TAG, "Impossible d'ouvrir %s", CONFIG_FILE_PATH);
+		cJSON_free(json);
+		return false;
+	}
+
+	size_t len = strlen(json);
+	bool ok = (fwrite(json, 1, len, f) == len);
+	fclose(f);
+	cJSON_free(json);
+
+	if (!ok) {
+		ESP_LOGE(TAG, "Erreur d'écriture dans %s", CONFIG_FILE_PATH);
+		return false;
+	}
+
+	ESP_LOGI(TAG, "Réveil sauvegardé dans %s", CONFIG_FILE_PATH);
+	return true;
+}

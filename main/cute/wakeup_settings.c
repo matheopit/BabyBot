@@ -2,6 +2,7 @@
 #include "app_manager.h"
 #include "lvgl.h"
 #include "robot_cute.h"
+#include <stdint.h>
 #include <string.h>
 
 static lv_obj_t *alarm_screen = NULL;
@@ -16,12 +17,10 @@ static lv_style_t style_btn;
 static lv_style_t style_checkbox;
 
 static lv_obj_t *label_time;
-static int hour = 7;
-static int minute = 30;
 
 static void update_time_label(void) {
-
-	lv_label_set_text_fmt(label_time, "%02d:%02d", hour, minute);
+	alarm_t *alarm = getAlarm();
+	lv_label_set_text_fmt(label_time, "%02d:%02d", alarm->hour, alarm->minute);
 }
 
 static void btn_plus_event_handler(lv_event_t *event) {
@@ -50,7 +49,7 @@ static void btn_minus_event_handler(lv_event_t *event) {
 
 static void btn_ok_event_handler(lv_event_t *event) {
 	if (event->code == LV_EVENT_CLICKED) {
-		//	app_manager_set_alarm()
+		set_wakeup_config();
 		draw_robot();
 	}
 }
@@ -59,12 +58,40 @@ static void checkbox_event(lv_event_t *e) {
 	lv_obj_t *cb = lv_event_get_target(e);
 
 	if (lv_event_get_code(e) == LV_EVENT_VALUE_CHANGED) {
-		bool checked = lv_obj_has_state(cb, LV_STATE_CHECKED);
+		int day = (int)(intptr_t)lv_event_get_user_data(e);
+		alarm_t *alarm = getAlarm();
 
-		if (checked) {
-			// Checkbox coché
+		if (lv_obj_has_state(cb, LV_STATE_CHECKED)) {
+			alarm->days |= (1 << day);
 		} else {
-			// Checkbox décoché
+			alarm->days &= ~(1 << day);
+		}
+	}
+}
+
+static void toggle_event(lv_event_t *e) {
+	if (lv_event_get_code(e) == LV_EVENT_VALUE_CHANGED) {
+		lv_obj_t *sw = lv_event_get_target(e);
+		getAlarm()->enabled = lv_obj_has_state(sw, LV_STATE_CHECKED);
+	}
+}
+
+static void update_toggle(void) {
+	if (getAlarm()->enabled) {
+		lv_obj_add_state(toggle_alarm, LV_STATE_CHECKED);
+	} else {
+		lv_obj_clear_state(toggle_alarm, LV_STATE_CHECKED);
+	}
+}
+
+// Coche les jours selon le bitmask de l'alarme (bit 0 = lundi)
+static void update_day_checks(void) {
+	int daysmask = getAlarm()->days;
+	for (int i = 0; i < 7; i++) {
+		if (daysmask & (1 << i)) {
+			lv_obj_add_state(day_checks[i], LV_STATE_CHECKED);
+		} else {
+			lv_obj_clear_state(day_checks[i], LV_STATE_CHECKED);
 		}
 	}
 }
@@ -114,6 +141,8 @@ void ui_alarm_screen_create(void) {
 		lv_obj_align(toggle_alarm, LV_ALIGN_TOP_RIGHT, -10, 10);
 		lv_obj_set_style_bg_color(toggle_alarm, lv_color_hex(0x4DA6FF),
 								  LV_PART_INDICATOR);
+		lv_obj_add_event_cb(toggle_alarm, toggle_event, LV_EVENT_VALUE_CHANGED,
+							NULL);
 
 		// ============================
 		// Container Horaire
@@ -157,15 +186,11 @@ void ui_alarm_screen_create(void) {
 		// Désactiver le scroll
 		lv_obj_clear_flag(day_container, LV_OBJ_FLAG_SCROLLABLE);
 
-		int daysmask = 0x1F;
 		for (int i = 0; i < 7; i++) {
 
 			day_checks[i] = lv_checkbox_create(day_container);
-			//  lv_obj_add_event_cb(cb, checkbox_event, LV_EVENT_VALUE_CHANGED,
-			//  i);
-			if ((daysmask & (1 + i)) == (i + 1)) {
-				lv_obj_add_state(day_checks[i], LV_STATE_CHECKED);
-			}
+			lv_obj_add_event_cb(day_checks[i], checkbox_event,
+								LV_EVENT_VALUE_CHANGED, (void *)(intptr_t)i);
 			lv_checkbox_set_text(day_checks[i], days[i]);
 			lv_obj_add_style(day_checks[i], &style_text, LV_PART_MAIN);
 			lv_obj_add_style(day_checks[i], &style_checkbox, LV_PART_INDICATOR);
@@ -195,5 +220,8 @@ void ui_alarm_screen_create(void) {
 		lv_obj_add_event_cb(btn_ok, btn_ok_event_handler, LV_EVENT_CLICKED,
 							NULL);
 	}
+	update_toggle();
+	update_time_label();
+	update_day_checks();
 	lv_scr_load(alarm_screen);
 }
