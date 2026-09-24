@@ -1,0 +1,24 @@
+{
+  "idf.currentSetup": "/home/mat/esp/esp-idf",
+  "idf.port": "/dev/ttyACM0",
+  "idf.flashType": "UART",
+  "idf.monitorBaudRate": "115200",
+  "idf.openOcdConfigs": [
+    "board/esp32s3-builtin.cfg"
+  ],
+
+  "C_Cpp.intelliSenseEngine": "disabled",
+  "clangd.path": "/home/mat/.espressif/tools/esp-clangd/esp-21.1.3_20260408/esp-clangd/bin/clangd",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=**",
+    "--compile-commands-dir=/home/mat/devel/babybot/build"
+  ],
+
+  "files.eol": "\n",
+  "editor.formatOnSave": false,
+  "[c]": {
+    "editor.defaultFormatter": "llvm-vs-code-extensions.vscode-clangd"
+  },
+  "idf.customExtraVars": {}
+}

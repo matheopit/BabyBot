@@ -1,0 +1,22 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      // OpenOCD sur le JTAG USB intégré, à utiliser avec la config
+      // "ESP32-S3 Debug (OpenOCD externe)". Arrêt : Ctrl+C dans le terminal.
+      "label": "OpenOCD ESP32-S3",
+      "type": "shell",
+      "command": ". ~/esp/esp-idf/export.sh > /dev/null && openocd -f board/esp32s3-builtin.cfg",
+      "options": { "shell": { "executable": "/bin/bash", "args": ["-c"] } },
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": { "regexp": "^(Error):\\s+(.*)$", "severity": 1, "message": 2 },
+        "background": {
+          "beginsPattern": "Open On-Chip Debugger",
+          "endsPattern": "Listening on port 3333"
+        }
+      },
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    }
+  ]
+}

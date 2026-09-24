@@ -1,0 +1,24 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // L'extension ESP-IDF lance/arrête OpenOCD elle-même.
+      // Aucun autre OpenOCD ne doit tourner (sinon conflit USB-JTAG).
+      "type": "gdbtarget",
+      "request": "attach",
+      "name": "ESP32-S3 Debug (OpenOCD auto)",
+      "program": "${workspaceFolder}/build/BabyBot.elf",
+      "initialBreakpoint": "app_main"
+    },
+    {
+      // Se connecte à un OpenOCD déjà lancé (tâche "OpenOCD ESP32-S3" ou terminal).
+      "type": "gdbtarget",
+      "request": "attach",
+      "name": "ESP32-S3 Debug (OpenOCD externe)",
+      "program": "${workspaceFolder}/build/BabyBot.elf",
+      "runOpenOCD": false,
+      "initialBreakpoint": "app_main",
+      "target": { "host": "localhost", "port": "3333" }
+    }
+  ]
+}
