@@ -40,6 +40,7 @@
 
 #include "draw_function.h"
 #include "lvgl.h"
+#include "pie_icons.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -688,6 +689,12 @@ void mp3_player_create(lv_obj_t *scr) {
 	lv_obj_set_style_radius(handle, 2, 0);
 	lv_obj_align(handle, LV_ALIGN_TOP_MID, 0, 10);
 	lv_obj_clear_flag(handle, LV_OBJ_FLAG_CLICKABLE);
+
+	/* Icone robot au centre de la zone (le clic passe a bottom_zone) */
+	lv_obj_t *robot_icon = lv_img_create(bottom_zone);
+	lv_img_set_src(robot_icon, &icon_section_4);
+	lv_obj_center(robot_icon);
+	lv_obj_clear_flag(robot_icon, LV_OBJ_FLAG_CLICKABLE);
 
 	ui_update_timer =
 		lv_timer_create(ui_update_timer_cb, UI_UPDATE_PERIOD_MS, NULL);
