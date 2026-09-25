@@ -1,3 +1,6 @@
 CompileFlags:
   CompilationDatabase: build
   Remove: [-m*, -f*]
+  # esp-clangd n'embarque pas ses en-têtes internes (stddef.h, stdarg.h...) :
+  # on utilise ceux de la toolchain GCC (à mettre à jour si la toolchain change)
+  Add: [-isystem/home/mat/.espressif/tools/xtensa-esp-elf/esp-15.2.0_20251204/xtensa-esp-elf/lib/gcc/xtensa-esp-elf/15.2.0/include]

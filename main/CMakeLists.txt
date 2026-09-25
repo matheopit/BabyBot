@@ -14,6 +14,7 @@ idf_component_register(
                               "./Wireless/wireless_utils.c"
                               "./NFC_Tag/ntag_read.c"
                               "./cute/robot_cute.c"
+                              "./cute/robot_face.c"
                               "./cute/wakeup_settings.c"
                               "./cute/wakeup_sound.c"
                               "./cute/app_manager.c"

@@ -20,7 +20,7 @@ static const char *TAG = "APP_MANAGER";
 #define NFC_MUSIC_DIR "/sdcard"
 
 // État global
-static mood_t g_mood = MOOD_HAPPY;
+static mood_t g_mood = MOOD_NORMAL;
 static alarm_t g_alarm = {7, 15, 0x1F, false, "", false};
 
 static void app_manager_parse_json(const char *json);
@@ -38,7 +38,7 @@ void app_manager_init(void) {
 	ESP_LOGI(TAG, "Initialisation App Manager");
 
 	// État par défaut
-	g_mood = MOOD_HAPPY;
+	g_mood = MOOD_NORMAL;
 	g_alarm.hour = 7;
 	g_alarm.minute = 30;
 	g_alarm.days = 0x1F;
@@ -68,11 +68,15 @@ void app_manager_init(void) {
 // ===============================
 void app_manager_set_mood(mood_t mood) {
 	g_mood = mood;
-	// eyes_set_state(eyes_canvas, mood);
+	/* Appelée depuis la boucle principale (tâche LVGL) : on peut rafraîchir
+	 * l'écran robot directement */
+	robot_update_mood();
 
 	ESP_LOGI(TAG, "Humeur mise à jour : %d", mood);
 }
-
+mood_t app_manager_get_mood(){
+	return g_mood;
+}
 // ===============================
 // ALARM
 // ===============================

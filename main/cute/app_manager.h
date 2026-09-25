@@ -10,7 +10,7 @@
 #define ALARM_SOUND_PATH_LEN 128
 extern QueueHandle_t app_msg_queue;
 
-typedef enum { MOOD_ANGRY, MOOD_HAPPY, MOOD_TIRED } mood_t;
+typedef enum { MOOD_NORMAL, MOOD_ANGRY, MOOD_HAPPY, MOOD_TIRED, MOOD_SAD } mood_t;
 
 typedef enum {
 	FRAME_SMILE,
@@ -48,6 +48,8 @@ typedef enum {
 void app_manager_init(void);
 void app_manager_notify(app_event_t event, void *data);
 void app_manager_set_mood(mood_t mood);
+mood_t app_manager_get_mood(void);
+mood_t app_manager_get_mood();
 void app_manager_set_alarm(int hour, int minute, int days, bool enabled);
 void app_manager_choose_frame(frame_select_t frame);
 void app_manager_setup_time();

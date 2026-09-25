@@ -185,11 +185,13 @@ void nfc_loop() {
 			misses = 0;
 			app_manager_notify(EVENT_NFC_TAG_REMOVED, NULL);
 		}
-        ESP_LOGI(TAG, "misses: %d", misses);
+       // ESP_LOGI(TAG, "misses: %d", misses);
+		#if 1
 		if (misses==0)
 		if (nfc_power_down() != ESP_OK) {
 			ESP_LOGW(TAG, "PN532 power down failed");
 		}
+		#endif
 		vTaskDelay(pdMS_TO_TICKS(NFC_POLL_PERIOD_MS));
 	}
 }

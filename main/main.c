@@ -47,7 +47,7 @@ void app_main(void) {
 	app_manager_init();
 	app_manager_choose_frame(FRAME_SPLASH_SCREEN);
 	Volume_adjustment(10);
-	Play_Music("/sdcard", "startup.mp3");
+	//Play_Music("/sdcard", "startup.mp3");
 	Driver_Init();
 
 	while (1) {
