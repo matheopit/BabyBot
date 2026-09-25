@@ -6,6 +6,7 @@
 #include "Wireless.h"
 #include "app_manager.h"
 #include "ntag_read.h"
+#include <time.h>
 QueueHandle_t app_msg_queue;
 
 void Driver_Loop(void *parameter) {
@@ -54,12 +55,23 @@ void app_main(void) {
 		int msg;
 		if (xQueueReceive(app_msg_queue, &msg, 0)) {
 			if (msg == MSG_TIME_READY) {
-				printf("Heure OK → changement de frame\n");
-				app_manager_choose_frame(FRAME_SMILE);
-				xTaskCreatePinnedToCore(nfc_task, "Other Driver task", 4096,
-										NULL, 4, NULL, 1);
+				static bool time_ready_done = false;
+				if (!time_ready_done) {
+					time_ready_done = true;
+					printf("Heure OK → changement de frame\n");
+					app_manager_choose_frame(FRAME_SMILE);
+					
+					xTaskCreatePinnedToCore(nfc_task, "Other Driver task", 4096,
+											NULL, 4, NULL, 1);
+				}
+				// Le WiFi ne sert qu'à la synchro de l'heure au démarrage
+				if (app_manager_time_is_synced()) {
+					WIFI_Stop();
+				}
 			}
 		}
+
+		wakeup();
 
 		vTaskDelay(pdMS_TO_TICKS(10));
 		lv_timer_handler();

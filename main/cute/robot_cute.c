@@ -149,6 +149,10 @@ lv_obj_t *hand_right;
 
 static void hand_right_anim_cb(void *obj, int32_t v) { lv_obj_set_x(obj, v); }
 
+static void hand_right_rotate_anim_cb(void *obj, int32_t v) {
+	lv_obj_set_style_transform_angle(obj, v, 0);
+}
+
 void animate_robot_hand_right(void) {
 	lv_anim_t a;
 	lv_anim_init(&a);
@@ -162,6 +166,23 @@ void animate_robot_hand_right(void) {
 
 	lv_anim_set_values(&a, 160, 200); // ← ça marche, valeurs en pixels
 	lv_anim_start(&a);
+
+	/* Rotation gauche → droite de 45° autour du poignet (bas de la main) */
+	lv_obj_set_style_transform_pivot_x(hand_right, 20, 0);
+	lv_obj_set_style_transform_pivot_y(hand_right, 50, 0);
+
+	lv_anim_t r;
+	lv_anim_init(&r);
+
+	lv_anim_set_var(&r, hand_right);
+	lv_anim_set_exec_cb(&r, hand_right_rotate_anim_cb);
+
+	lv_anim_set_time(&r, 1000);
+	lv_anim_set_playback_time(&r, 1000);
+	lv_anim_set_repeat_count(&r, LV_ANIM_REPEAT_INFINITE);
+
+	lv_anim_set_values(&r, -450, 450); // en 0.1° : -22.5° → +22.5°
+	lv_anim_start(&r);
 }
 
 static lv_obj_t *create_hand(lv_obj_t *parent, int posx, int posy) {

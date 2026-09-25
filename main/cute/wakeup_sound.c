@@ -91,6 +91,7 @@ static void btn_back_event_handler(lv_event_t *e) {
 static void btn_ok_event_handler(lv_event_t *e) {
 	if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
 		set_wakeup_config();
+		getAlarm()->in_settings = false;
 		draw_robot();
 	}
 }

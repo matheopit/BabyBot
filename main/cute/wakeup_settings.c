@@ -222,5 +222,6 @@ void ui_alarm_screen_create(void) {
 	update_toggle();
 	update_time_label();
 	update_day_checks();
+	getAlarm()->in_settings = true;
 	lv_scr_load(alarm_screen);
 }
