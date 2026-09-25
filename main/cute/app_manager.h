@@ -26,11 +26,21 @@ typedef struct {
 	int minute;
 	int days; // bitmask : bit 0 = lundi, bit 1 = mardi, ... bit 6 = dimanche
 	bool enabled;
-	char sound[ALARM_SOUND_PATH_LEN]; // chemin du mp3 joué au réveil ("" = aucun)
+	char sound[ALARM_SOUND_PATH_LEN]; // chemin du mp3 joué au réveil ("" =
+									  // aucun)
+	bool in_settings; // true tant que l'utilisateur règle le réveil
 } alarm_t;
 
+#define NFC_UID_MAX_LEN 7
+
+typedef struct {
+	uint8_t uid[NFC_UID_MAX_LEN];
+	uint8_t len; // 4 ou 7 octets
+} nfc_tag_t;
+
 typedef enum {
-	EVENT_NFC_TAG,
+	EVENT_NFC_TAG,		   // data : nfc_tag_t* du tag posé
+	EVENT_NFC_TAG_REMOVED, // data : NULL
 	EVENT_JSON_UPDATE,
 	EVENT_ALARM_TRIGGER
 } app_event_t;
@@ -41,5 +51,7 @@ void app_manager_set_mood(mood_t mood);
 void app_manager_set_alarm(int hour, int minute, int days, bool enabled);
 void app_manager_choose_frame(frame_select_t frame);
 void app_manager_setup_time();
+bool app_manager_time_is_synced(void);
 alarm_t *getAlarm();
 bool set_wakeup_config(void);
+void wakeup(void);
