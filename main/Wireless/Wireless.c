@@ -7,6 +7,7 @@ bool Scan_finish = 0;
 bool WiFi_Scan_Finish = 0;
 bool BLE_Scan_Finish = 0;
 esp_event_handler_instance_t instance_got_ip;
+static volatile bool wifi_stopping = false;
 void Wireless_Init(void) {
 	// Initialize NVS.
 	esp_err_t ret = nvs_flash_init();
@@ -18,15 +19,6 @@ void Wireless_Init(void) {
 	ESP_ERROR_CHECK(ret);
 	// WiFi
 	xTaskCreatePinnedToCore(WIFI_Init, "WIFI task", 4096, NULL, 1, NULL, 0);
-	// // BLE
-	// xTaskCreatePinnedToCore(
-	//     BLE_Init,
-	//     "BLE task",
-	//     4096,
-	//     NULL,
-	//     2,
-	//     NULL,
-	//     0);
 }
 
 static void wifi_event_handler(void *arg, esp_event_base_t event_base,
@@ -41,8 +33,12 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
 	}
 
 	if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
-		printf("WiFi: Disconnected, retrying...\n");
-		esp_wifi_connect();
+		if (wifi_stopping) {
+			printf("WiFi: Disconnected\n");
+		} else {
+			printf("WiFi: Disconnected, retrying...\n");
+			esp_wifi_connect();
+		}
 	}
 
 	if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
@@ -75,6 +71,15 @@ void WIFI_Init(void *arg) {
 
 	vTaskDelete(NULL);
 }
+// Coupe le WiFi pour économiser la batterie (heure déjà synchronisée)
+void WIFI_Stop(void) {
+	wifi_stopping = true;
+	esp_wifi_disconnect();
+	esp_wifi_stop();
+	esp_wifi_deinit();
+	printf("WiFi: arrêté\n");
+}
+
 uint16_t WIFI_Scan(void) {
 	uint16_t ap_count = 0;
 	esp_wifi_scan_start(NULL, true);
