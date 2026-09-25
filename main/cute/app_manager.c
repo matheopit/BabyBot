@@ -1,4 +1,5 @@
 #include "app_manager.h"
+#include "PCM5101.h"
 #include "cJSON.h"
 #include "draw_function.h"
 #include "esp_log.h"
@@ -15,10 +16,12 @@ static const char *TAG = "APP_MANAGER";
 
 #define CONFIG_DIR "/sdcard/data"
 #define CONFIG_FILE_PATH CONFIG_DIR "/config.json"
+// Musique associée à un tag : NFC_MUSIC_DIR/<UID en hexa>.mp3
+#define NFC_MUSIC_DIR "/sdcard"
 
 // État global
 static mood_t g_mood = MOOD_HAPPY;
-static alarm_t g_alarm = {7, 15, 0x1F, false, ""};
+static alarm_t g_alarm = {7, 15, 0x1F, false, "", false};
 
 static void app_manager_parse_json(const char *json);
 static void app_manager_load_config(void);
@@ -168,17 +171,34 @@ static void app_manager_load_config(void) {
 // ===============================
 // NFC EVENT
 // ===============================
-static void app_manager_handle_nfc(uint8_t *uid, int uid_len) {
-	ESP_LOGI(TAG, "NFC UID détecté :");
-	for (int i = 0; i < uid_len; i++)
-		ESP_LOGI(TAG, "%02X ", uid[i]);
-	ESP_LOGI(TAG, "\n");
+static bool nfc_music_playing = false;
 
-	// Exemple : carte spéciale → humeur joyeuse
-	if (uid_len == 4 && uid[0] == 0xDE && uid[1] == 0xAD) {
-		app_manager_set_mood(MOOD_HAPPY);
-	} else {
-		app_manager_set_mood(MOOD_ANGRY);
+// Tag posé : joue NFC_MUSIC_DIR/<UID>.mp3 s'il existe
+static void app_manager_handle_nfc(const nfc_tag_t *tag) {
+	char uid_hex[NFC_UID_MAX_LEN * 2 + 1] = "";
+	for (int i = 0; i < tag->len && i < NFC_UID_MAX_LEN; i++)
+		sprintf(uid_hex + 2 * i, "%02X", tag->uid[i]);
+
+	char path[64];
+	snprintf(path, sizeof(path), "%s/%s.mp3", NFC_MUSIC_DIR, uid_hex);
+
+	struct stat st;
+	if (stat(path, &st) != 0) {
+		ESP_LOGW(TAG, "Tag %s inconnu : copier un mp3 sous %s", uid_hex, path);
+		return;
+	}
+
+	ESP_LOGI(TAG, "Tag %s : lecture de %s", uid_hex, path);
+	Play_Music_ex(path);
+	nfc_music_playing = true;
+}
+
+// Tag retiré : arrête la musique qu'il avait lancée
+static void app_manager_handle_nfc_removed(void) {
+	ESP_LOGI(TAG, "Tag retiré");
+	if (nfc_music_playing) {
+		Music_stop();
+		nfc_music_playing = false;
 	}
 }
 
@@ -189,7 +209,11 @@ void app_manager_notify(app_event_t event, void *data) {
 	switch (event) {
 
 	case EVENT_NFC_TAG:
-		app_manager_handle_nfc((uint8_t *)data, 4);
+		app_manager_handle_nfc((const nfc_tag_t *)data);
+		break;
+
+	case EVENT_NFC_TAG_REMOVED:
+		app_manager_handle_nfc_removed();
 		break;
 
 	case EVENT_JSON_UPDATE:
@@ -205,6 +229,7 @@ void app_manager_notify(app_event_t event, void *data) {
 
 void app_manager_choose_frame(frame_select_t frame) {
 
+	getAlarm()->in_settings = false;
 	switch (frame) {
 	case FRAME_SMILE:
 		draw_robot();
@@ -228,7 +253,7 @@ void app_manager_choose_frame(frame_select_t frame) {
 	}
 }
 
-static bool sntp_is_synced(void) {
+bool app_manager_time_is_synced(void) {
 	time_t now;
 	struct tm timeinfo = {0};
 
@@ -248,13 +273,13 @@ static void wait_for_sntp_sync(void) {
 	int retry = 0;
 	const int max_retry = 10;
 
-	while (!sntp_is_synced() && retry < max_retry) {
+	while (!app_manager_time_is_synced() && retry < max_retry) {
 		printf("SNTP non sync...\n");
 		vTaskDelay(pdMS_TO_TICKS(500));
 		retry++;
 	}
 
-	if (sntp_is_synced()) {
+	if (app_manager_time_is_synced()) {
 		printf("SNTP sync !\n");
 		apply_timezone_paris();
 
@@ -277,6 +302,9 @@ void app_manager_setup_time() {
 	sntp_init();
 	printf("Synchronisation NTP lancée\n");
 	wait_for_sntp_sync();
+	if (app_manager_time_is_synced()) {
+		sntp_stop(); // heure obtenue, plus besoin d'interroger le serveur
+	}
 	int msg = MSG_TIME_READY;
 	xQueueSend(app_msg_queue, &msg, 0);
 }
@@ -331,4 +359,37 @@ bool set_wakeup_config(void) {
 
 	ESP_LOGI(TAG, "Réveil sauvegardé dans %s", CONFIG_FILE_PATH);
 	return true;
+}
+
+// Déclenche le réveil à l'heure et aux jours configurés (une fois par minute)
+void wakeup(void) {
+	static int last_trigger = -1; // jour de l'année * 1440 + minute du jour
+
+	alarm_t *alarm = getAlarm();
+	if (!alarm->enabled || alarm->in_settings)
+		return;
+
+	time_t now;
+	struct tm ti;
+	time(&now);
+	localtime_r(&now, &ti);
+	if (ti.tm_year <= 100) // heure pas encore synchronisée
+		return;
+
+	int day_bit = (ti.tm_wday + 6) % 7; // tm_wday : 0 = dimanche -> bit 0 = lundi
+	if (!(alarm->days & (1 << day_bit)))
+		return;
+	if (ti.tm_hour != alarm->hour || ti.tm_min != alarm->minute)
+		return;
+
+	int stamp = ti.tm_yday * 1440 + ti.tm_hour * 60 + ti.tm_min;
+	if (stamp == last_trigger)
+		return;
+	last_trigger = stamp;
+
+	printf("Réveil ! %02d:%02d\n", ti.tm_hour, ti.tm_min);
+	app_manager_notify(EVENT_ALARM_TRIGGER, NULL);
+	if (alarm->sound[0] != '\0') {
+		Play_Music_ex(alarm->sound);
+	}
 }
