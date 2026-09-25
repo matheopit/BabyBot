@@ -1,10 +1,12 @@
 #include <esp_log.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#include "app_manager.h"
 #include "pn532.h"
 #include "pn532_driver_hsu.h"
 #include "pn532_driver_i2c.h"
@@ -12,8 +14,8 @@
 #include "sdkconfig.h"
 
 // select ONLY ONE interface for the PN532
-#define PN532_MODE_I2C 1
-#define PN532_MODE_HSU 0
+#define PN532_MODE_I2C 0
+#define PN532_MODE_HSU 1
 #define PN532_MODE_SPI 0
 
 #if PN532_MODE_I2C
@@ -31,9 +33,9 @@
 // HSU mode needs only RX/TX pins. RESET pin will be used if valid.
 #define RESET_PIN (-1)
 #define IRQ_PIN (-1)
-#define HSU_HOST_RX (4)
-#define HSU_HOST_TX (5)
-#define HSU_UART_PORT UART_NUM_1
+#define HSU_HOST_RX (43)
+#define HSU_HOST_TX (44)
+#define HSU_UART_PORT UART_NUM_0
 #define HSU_BAUD_RATE (921600)
 
 #elif PN532_MODE_SPI
@@ -53,6 +55,13 @@
 #define SPI_CLOCKRATE (1000000)
 
 #endif
+
+#define NFC_POLL_PERIOD_MS 2000 // intervalle entre deux recherches de tag
+#define NFC_CMD_TIMEOUT_MS 200
+// Nombre d'essais d'activation par recherche (0xFF = attente infinie)
+#define NFC_PASSIVE_RETRIES 0x04
+// Lectures ratées consécutives avant de considérer le tag comme retiré
+#define NFC_MISSES_BEFORE_REMOVED 2
 
 static const char *TAG = "ntag_read";
 static pn532_io_t pn532_io;
@@ -123,74 +132,64 @@ void init_nfc() {
 	ESP_LOGI(TAG, "Firmware ver. %d.%d", (int)(version_data >> 16) & 0xFF,
 			 (int)(version_data >> 8) & 0xFF);
 
+	// Une recherche se termine rapidement même sans tag, pour couper le champ
+	// RF
+	err = pn532_set_passive_activation_retries(&pn532_io, NFC_PASSIVE_RETRIES);
+	if (err != ESP_OK) {
+		ESP_LOGW(TAG, "failed to set passive activation retries: %d", err);
+	}
+
 	ESP_LOGI(TAG, "Waiting for an ISO14443A Card ...");
 }
 
-void nfc_loop() {
-	esp_err_t err;
-	while (1) {
-		uint8_t uid[] = {0, 0, 0, 0,
-						 0, 0, 0}; // Buffer to store the returned UID
-		uint8_t uid_length; // Length of the UID (4 or 7 bytes depending on
-							// ISO14443A card type)
-
-		// Wait for an ISO14443A type cards (Mifare, etc.).  When one is found
-		// 'uid' will be populated with the UID, and uid_length will indicate
-		// if the uid is 4 bytes (Mifare Classic) or 7 bytes (Mifare Ultralight)
-		err = pn532_read_passive_target_id(
-			&pn532_io, PN532_BRTY_ISO14443A_106KBPS, uid, &uid_length, 0);
-		if (ESP_OK == err) {
-			// Display some basic information about the card
-			ESP_LOGI(TAG, "\nFound an ISO14443A card");
-			ESP_LOGI(TAG, "UID Length: %d bytes", uid_length);
-			ESP_LOGI(TAG, "UID Value:");
-			ESP_LOG_BUFFER_HEX_LEVEL(TAG, uid, uid_length, ESP_LOG_INFO);
-
-			err = pn532_in_list_passive_target(&pn532_io);
-			if (err != ESP_OK) {
-				ESP_LOGI(TAG, "Failed to inList passive target");
-				goto end;
-			}
-
-			NTAG2XX_MODEL ntag_model = NTAG2XX_UNKNOWN;
-			err = ntag2xx_get_model(&pn532_io, &ntag_model);
-			if (err != ESP_OK)
-				goto end;
-
-			int page_max;
-			switch (ntag_model) {
-			case NTAG2XX_NTAG213:
-				page_max = 45;
-				ESP_LOGI(TAG, "found NTAG213 target (or maybe NTAG203)");
-				break;
-
-			case NTAG2XX_NTAG215:
-				page_max = 135;
-				ESP_LOGI(TAG, "found NTAG215 target");
-				break;
-
-			case NTAG2XX_NTAG216:
-				page_max = 231;
-				ESP_LOGI(TAG, "found NTAG216 target");
-				break;
-
-			default:
-				ESP_LOGI(TAG, "Found unknown NTAG target!");
-				goto end;
-			}
-
-			for (int page = 0; page < page_max; page += 4) {
-				uint8_t buf[16];
-				err = ntag2xx_read_page(&pn532_io, page, buf, 16);
-				if (err == ESP_OK) {
-					ESP_LOG_BUFFER_HEXDUMP(TAG, buf, 16, ESP_LOG_INFO);
-				} else {
-					ESP_LOGI(TAG, "Failed to read pages %d", page);
-					break;
-				}
-			}
-			vTaskDelay(1000 / portTICK_PERIOD_MS);
-		}
+// Met le PN532 en veille (champ RF coupé, quelques dizaines de µA).
+// Il se réveille à la prochaine commande reçue sur l'UART.
+static esp_err_t nfc_power_down(void) {
+	uint8_t cmd[] = {PN532_COMMAND_POWERDOWN, 0x10}; // 0x10 : réveil par HSU
+	esp_err_t err = pn532_send_command_wait_ack(&pn532_io, cmd, sizeof(cmd),
+												NFC_CMD_TIMEOUT_MS);
+	if (err == ESP_OK) {
+		uint8_t resp[16];
+		err =
+			pn532_read_data(&pn532_io, resp, sizeof(resp), NFC_CMD_TIMEOUT_MS);
 	}
-end:;
+	// Force l'envoi du préambule de réveil HSU avant la prochaine commande
+	pn532_io.isSAMConfigDone = false;
+	return err;
+}
+
+// Cherche un tag toutes les NFC_POLL_PERIOD_MS, PN532 en veille entre deux.
+// Prévient app_manager quand un nouveau tag est posé ou quand il est retiré ;
+// un tag qui reste posé ne génère pas de nouvel événement.
+void nfc_loop() {
+	nfc_tag_t current = {0}; // tag actuellement posé (len = 0 : aucun)
+	int misses = 0;			 // lectures ratées consécutives
+
+	while (1) {
+		nfc_tag_t tag = {0};
+		esp_err_t err = pn532_read_passive_target_id(
+			&pn532_io, PN532_BRTY_ISO14443A_106KBPS, tag.uid, &tag.len,
+			NFC_CMD_TIMEOUT_MS);
+
+		if (err == ESP_OK && tag.len > 0 && tag.len <= NFC_UID_MAX_LEN) {
+			misses = 0;
+			if (tag.len != current.len ||
+				memcmp(tag.uid, current.uid, tag.len) != 0) {
+				ESP_LOGI(TAG, "Tag posé :");
+				ESP_LOG_BUFFER_HEX_LEVEL(TAG, tag.uid, tag.len, ESP_LOG_INFO);
+				current = tag;
+				app_manager_notify(EVENT_NFC_TAG, &current);
+			}
+		} else if (current.len > 0 && ++misses >= NFC_MISSES_BEFORE_REMOVED) {
+			current.len = 0;
+			misses = 0;
+			app_manager_notify(EVENT_NFC_TAG_REMOVED, NULL);
+		}
+        ESP_LOGI(TAG, "misses: %d", misses);
+		if (misses==0)
+		if (nfc_power_down() != ESP_OK) {
+			ESP_LOGW(TAG, "PN532 power down failed");
+		}
+		vTaskDelay(pdMS_TO_TICKS(NFC_POLL_PERIOD_MS));
+	}
 }
