@@ -228,6 +228,16 @@ void Music_pause(void) {
 	}
 }
 
+// Arrête la lecture en cours (le lecteur ferme lui-même le fichier)
+void Music_stop(void) {
+	if (audio_player_get_state() != AUDIO_PLAYER_STATE_IDLE) {
+		esp_err_t ret = audio_player_stop();
+		if (ret != ESP_OK) {
+			ESP_LOGE(TAG, "Failed to stop audio: %s", esp_err_to_name(ret));
+		}
+	}
+}
+
 void Volume_adjustment(uint8_t Vol) {
 	if (Vol > Volume_MAX)
 		printf(

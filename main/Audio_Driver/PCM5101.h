@@ -48,6 +48,7 @@ void Play_Music_ex(const char *filePath);
 void Play_Music(const char *directory, const char *fileName);
 void Music_resume(void);
 void Music_pause(void);
+void Music_stop(void);
 
 uint32_t Music_Duration(void);
 uint32_t Music_Elapsed(void);
