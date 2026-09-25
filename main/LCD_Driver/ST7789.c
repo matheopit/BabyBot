@@ -5,6 +5,10 @@ static const char *TAG_LCD = "ST7789";
 esp_lcd_panel_handle_t panel_handle = NULL;
 
 void LCD_Init(void) {
+	// Rétroéclairage éteint le plus tôt possible : la GRAM contient des
+	// données aléatoires tant que LVGL n'a rien dessiné
+	Backlight_Init();
+
 	ESP_LOGI(TAG_LCD, "Initialize SPI bus");
 	spi_bus_config_t buscfg = {
 		.sclk_io_num = EXAMPLE_PIN_NUM_SCLK,
@@ -46,15 +50,15 @@ void LCD_Init(void) {
 	ESP_ERROR_CHECK(esp_lcd_panel_init(panel_handle));
 	ESP_ERROR_CHECK(esp_lcd_panel_mirror(panel_handle, true, false));
 
-	// user can flush pre-defined pattern to the screen before we turn on the
-	// screen or backlight
-	ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
-
-	ESP_LOGI(TAG_LCD, "Turn on LCD backlight");
-	// gpio_set_level(EXAMPLE_PIN_NUM_BK_LIGHT, EXAMPLE_LCD_BK_LIGHT_ON_LEVEL);
-
-	Backlight_Init();
+	// L'affichage et le rétroéclairage restent éteints : LCD_Display_On() les
+	// allume une fois la première image LVGL envoyée
 	TOUCH_Init();
+}
+
+void LCD_Display_On(void) {
+	ESP_LOGI(TAG_LCD, "Turn on LCD display and backlight");
+	ESP_ERROR_CHECK(esp_lcd_panel_disp_on_off(panel_handle, true));
+	Set_Backlight(LCD_Backlight);
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -84,7 +88,7 @@ void Backlight_Init(void) {
 	ledc_channel_config(&ledc_channel);
 	ledc_fade_func_install(0);
 
-	Set_Backlight(LCD_Backlight); // 0~100
+	Set_Backlight(0); // allumé plus tard par LCD_Display_On()
 }
 void Set_Backlight(uint8_t Light) {
 	if (Light > Backlight_MAX)

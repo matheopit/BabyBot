@@ -196,8 +196,8 @@ static esp_err_t panel_st7789t_init(esp_lcd_panel_t *panel)
     esp_lcd_panel_io_tx_param(io, 0xE1, (uint8_t []){0xD0, 0x09, 0x0F, 0x08, 0x07, 0x14, 0x37, 0x44, 0x4D, 0x38, 0x15, 0x16, 0x2C, 0x2E}, 14);
     /* Sleep Out */
     esp_lcd_panel_io_tx_param(io, 0x21, NULL, 0);
-    /* Display On */
-    esp_lcd_panel_io_tx_param(io, 0x29, NULL, 0);
+    /* Display On : fait plus tard par LCD_Display_On(), sinon la GRAM non
+       initialisée s'affiche au démarrage */
 
     esp_lcd_panel_io_tx_param(io, 0x2C, NULL, 0);
 

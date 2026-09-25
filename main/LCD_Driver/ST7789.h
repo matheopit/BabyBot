@@ -60,3 +60,5 @@ void Set_Backlight(uint8_t Light); // Call this function to adjust the
 
 void LCD_Init(void); // Call this function to initialize the screen (must be
 					 // called in the main function) !!!!!
+void LCD_Display_On(void); // Allume l'écran et le rétroéclairage (à appeler
+						   // après le premier rafraîchissement LVGL)

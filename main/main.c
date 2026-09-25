@@ -46,6 +46,10 @@ void app_main(void) {
 	/********************* Demo *********************/
 	app_manager_init();
 	app_manager_choose_frame(FRAME_SPLASH_SCREEN);
+	// Dessine le splash avant d'allumer l'écran pour éviter le flash au boot
+	lv_refr_now(NULL);
+	vTaskDelay(pdMS_TO_TICKS(20)); // fin du dernier transfert DMA
+	LCD_Display_On();
 	Volume_adjustment(10);
 	//Play_Music("/sdcard", "startup.mp3");
 	Driver_Init();
