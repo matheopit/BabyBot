@@ -21,6 +21,28 @@ static uint32_t s_duration_sec = 0;
 //     return i2s_channel_write(i2s_tx_chan, (char *)audio_buffer, len,
 //     bytes_written, timeout_ms);
 // }
+// Le canal I2S n'est actif que pendant la lecture : activé, il garde un
+// verrou de gestion d'énergie qui empêche le light sleep
+static bool s_tx_enabled = false;
+
+static esp_err_t i2s_tx_enable(void) {
+	if (s_tx_enabled)
+		return ESP_OK;
+	esp_err_t ret = i2s_channel_enable(i2s_tx_chan);
+	if (ret == ESP_OK)
+		s_tx_enabled = true;
+	return ret;
+}
+
+static esp_err_t i2s_tx_disable(void) {
+	if (!s_tx_enabled)
+		return ESP_OK;
+	esp_err_t ret = i2s_channel_disable(i2s_tx_chan);
+	if (ret == ESP_OK)
+		s_tx_enabled = false;
+	return ret;
+}
+
 static esp_err_t bsp_i2s_write(void *audio_buffer, size_t len,
 							   size_t *bytes_written, uint32_t timeout_ms) {
 	int16_t *samples = (int16_t *)audio_buffer;
@@ -51,17 +73,18 @@ static esp_err_t bsp_i2s_reconfig_clk(uint32_t rate, uint32_t bits_cfg,
 	};
 	s_sample_rate = rate;
 	s_bytes_per_frame = (bits_cfg / 8) * (ch == I2S_SLOT_MODE_MONO ? 1 : 2);
-	ret |= i2s_channel_disable(i2s_tx_chan);
+	ret |= i2s_tx_disable();
 	ret |= i2s_channel_reconfig_std_clock(i2s_tx_chan, &std_cfg.clk_cfg);
 	ret |= i2s_channel_reconfig_std_slot(i2s_tx_chan, &std_cfg.slot_cfg);
-	ret |= i2s_channel_enable(i2s_tx_chan);
+	ret |= i2s_tx_enable();
 	return ret;
 }
 
 static esp_err_t
 audio_mute_function(AUDIO_PLAYER_MUTE_SETTING setting) { // audio mute function
 	ESP_LOGI(TAG, "mute setting %d", setting);
-	return ESP_OK;
+	// Appelée par le lecteur avant (UNMUTE) et après (MUTE) chaque fichier
+	return setting == AUDIO_PLAYER_UNMUTE ? i2s_tx_enable() : i2s_tx_disable();
 }
 
 static esp_err_t bsp_audio_init(const i2s_std_config_t *i2s_config,
@@ -75,12 +98,12 @@ static esp_err_t bsp_audio_init(const i2s_std_config_t *i2s_config,
 	const i2s_std_config_t *p_i2s_cfg =
 		(i2s_config != NULL) ? i2s_config : &std_cfg_default;
 	if (tx_channel) {
+		// activé au début de chaque lecture (audio_mute_function)
 		ESP_ERROR_CHECK(i2s_channel_init_std_mode(*tx_channel, p_i2s_cfg));
-		ESP_ERROR_CHECK(i2s_channel_enable(*tx_channel));
 	}
 	if (rx_channel) {
+		// jamais lu : laissé désactivé
 		ESP_ERROR_CHECK(i2s_channel_init_std_mode(*rx_channel, p_i2s_cfg));
-		ESP_ERROR_CHECK(i2s_channel_enable(*rx_channel));
 	}
 	return ESP_OK;
 }

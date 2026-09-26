@@ -5,6 +5,7 @@
 #include "ST7789.h"
 #include "Wireless.h"
 #include "app_manager.h"
+#include "esp_pm.h"
 #include "ntag_read.h"
 #include <time.h>
 QueueHandle_t app_msg_queue;
@@ -36,7 +37,22 @@ void Driver_Init(void) {
 							NULL, 0);
 }
 
+// Gestion d'énergie : fréquence CPU dynamique et light sleep automatique
+// quand plus aucune tâche n'a de travail. Le minimum reste à 80 MHz pour que
+// l'APB (donc le PWM du rétroéclairage) ne change pas de fréquence.
+static void PM_Init(void) {
+	esp_pm_config_t pm_config = {
+		.max_freq_mhz = CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ,
+		.min_freq_mhz = 80,
+		.light_sleep_enable = true,
+	};
+	esp_err_t ret = esp_pm_configure(&pm_config);
+	if (ret != ESP_OK)
+		printf("esp_pm_configure: %s\n", esp_err_to_name(ret));
+}
+
 void app_main(void) {
+	PM_Init();
 	app_msg_queue = xQueueCreate(4, sizeof(int));
 	SD_Init();
 	LCD_Init();
@@ -77,7 +93,10 @@ void app_main(void) {
 
 		wakeup();
 
-		vTaskDelay(pdMS_TO_TICKS(10));
+		// Écran éteint : boucle plus lente pour laisser le CPU en light sleep
+		// (le toucher reste lu, il suffit à rallumer l'écran)
+		vTaskDelay(pdMS_TO_TICKS(LVGL_Screen_Is_Asleep() ? 100 : 10));
+		LVGL_Tick_Update();
 		lv_timer_handler();
 		LVGL_Screen_Sleep_Loop();
 	}

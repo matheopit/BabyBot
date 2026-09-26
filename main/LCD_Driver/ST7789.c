@@ -53,6 +53,13 @@ void LCD_Init(void) {
 	// L'affichage et le rétroéclairage restent éteints : LCD_Display_On() les
 	// allume une fois la première image LVGL envoyée
 	TOUCH_Init();
+
+	// En light sleep, ESP-IDF isole toutes les broches (entrée flottante). On
+	// garde les resets de l'écran et du tactile (sinon ils perdraient leur
+	// init) et le rétroéclairage (sinon il pourrait luire)
+	gpio_sleep_sel_dis(EXAMPLE_PIN_NUM_LCD_RST);
+	gpio_sleep_sel_dis(I2C_Touch_RST_IO);
+	gpio_sleep_sel_dis(EXAMPLE_PIN_NUM_BK_LIGHT);
 }
 
 void LCD_Display_On(void) {

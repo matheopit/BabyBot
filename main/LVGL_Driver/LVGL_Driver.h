@@ -14,7 +14,6 @@
 #define LVGL_BUF_LEN (LVGL_BUF_W * LVGL_BUF_H)
 
 // #define LVGL_BUF_LEN  (EXAMPLE_LCD_H_RES * EXAMPLE_LCD_V_RES)
-#define EXAMPLE_LVGL_TICK_PERIOD_MS 2
 
 // Mise en veille : rétroéclairage éteint après ce délai sans toucher l'écran
 #define SCREEN_SLEEP_TIMEOUT_MS (60 * 1000)
@@ -36,3 +35,9 @@ void LVGL_Init(void);
 // Veille de l'écran (à appeler uniquement depuis la tâche LVGL)
 void LVGL_Screen_Sleep_Loop(void); // éteint l'écran après le délai d'inactivité
 void LVGL_Screen_Wake(void);	   // rallume l'écran et relance le délai
+bool LVGL_Screen_Is_Asleep(void);
+
+// Avance le tick LVGL du temps écoulé depuis le dernier appel. Remplace le
+// timer périodique de 2 ms, qui réveillerait le CPU en permanence et
+// empêcherait le light sleep.
+void LVGL_Tick_Update(void);

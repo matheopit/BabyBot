@@ -40,6 +40,9 @@ void configure_GPIO(int pin, gpio_mode_t Mode) {
 void PWR_Init(void) {
 	configure_GPIO(PWR_KEY_Input_PIN, GPIO_MODE_INPUT);
 	configure_GPIO(PWR_Control_PIN, GPIO_MODE_OUTPUT);
+	// En light sleep, ESP-IDF isole les broches (entrée flottante) : celle-ci
+	// doit rester à 1, sinon l'alimentation sur batterie est coupée
+	gpio_sleep_sel_dis(PWR_Control_PIN);
 	gpio_set_level(PWR_Control_PIN, false);
 	vTaskDelay(100);
 	if (!gpio_get_level(PWR_KEY_Input_PIN)) {

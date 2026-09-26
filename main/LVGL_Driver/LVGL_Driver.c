@@ -1,4 +1,5 @@
 #include "LVGL_Driver.h"
+#include "esp_pm.h"
 
 static const char *TAG_LVGL = "LVGL";
 
@@ -12,9 +13,16 @@ lv_disp_draw_buf_t
 lv_disp_drv_t disp_drv; // contains callback functions
 lv_indev_drv_t indev_drv;
 
-static void increase_lvgl_tick(void *arg) {
-	/* Tell LVGL how many milliseconds has elapsed */
-	lv_tick_inc(EXAMPLE_LVGL_TICK_PERIOD_MS);
+void LVGL_Tick_Update(void) {
+	static int64_t last_us = 0;
+	int64_t now_us = esp_timer_get_time();
+	if (last_us == 0)
+		last_us = now_us;
+	uint32_t elapsed_ms = (now_us - last_us) / 1000;
+	if (elapsed_ms) {
+		lv_tick_inc(elapsed_ms);
+		last_us += (int64_t)elapsed_ms * 1000;
+	}
 }
 
 bool notify_lvgl_flush_ready(esp_lcd_panel_io_handle_t panel_io,
@@ -44,12 +52,19 @@ static bool screen_asleep = false;
 // Le toucher qui rallume l'écran n'est pas transmis à LVGL (sinon il
 // ouvrirait le menu) : on l'ignore jusqu'à ce que le doigt soit relevé
 static bool wake_touch_pending = false;
+// Pas de light sleep tant que l'écran est allumé : le PWM du rétroéclairage
+// (LEDC) s'arrêterait pendant la veille du CPU
+static esp_pm_lock_handle_t screen_pm_lock = NULL;
+
+bool LVGL_Screen_Is_Asleep(void) { return screen_asleep; }
 
 void LVGL_Screen_Wake(void) {
 	lv_disp_trig_activity(NULL);
 	if (screen_asleep) {
 		screen_asleep = false;
 		ESP_LOGI(TAG_LVGL, "Sortie de veille");
+		if (screen_pm_lock)
+			esp_pm_lock_acquire(screen_pm_lock);
 		Set_Backlight(LCD_Backlight);
 	}
 }
@@ -60,6 +75,8 @@ void LVGL_Screen_Sleep_Loop(void) {
 		screen_asleep = true;
 		ESP_LOGI(TAG_LVGL, "Mise en veille de l'écran");
 		Set_Backlight(0);
+		if (screen_pm_lock)
+			esp_pm_lock_release(screen_pm_lock);
 	}
 }
 
@@ -171,14 +188,10 @@ void LVGL_Init(void) {
 	indev_drv.user_data = tp;
 	lv_indev_drv_register(&indev_drv);
 
-	/********************* LVGL *********************/
-	ESP_LOGI(TAG_LVGL, "Install LVGL tick timer");
-	// Tick interface for LVGL (using esp_timer to generate 2ms periodic event)
-	const esp_timer_create_args_t lvgl_tick_timer_args = {
-		.callback = &increase_lvgl_tick, .name = "lvgl_tick"};
-
-	esp_timer_handle_t lvgl_tick_timer = NULL;
-	ESP_ERROR_CHECK(esp_timer_create(&lvgl_tick_timer_args, &lvgl_tick_timer));
-	ESP_ERROR_CHECK(esp_timer_start_periodic(
-		lvgl_tick_timer, EXAMPLE_LVGL_TICK_PERIOD_MS * 1000));
+	// L'écran démarre allumé : on garde le verrou jusqu'à la première veille
+	if (esp_pm_lock_create(ESP_PM_NO_LIGHT_SLEEP, 0, "screen",
+						   &screen_pm_lock) == ESP_OK)
+		esp_pm_lock_acquire(screen_pm_lock);
+	else
+		screen_pm_lock = NULL;
 }
