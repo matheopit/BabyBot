@@ -226,7 +226,7 @@ void app_manager_notify(app_event_t event, void *data) {
 
 	case EVENT_ALARM_TRIGGER:
 		ESP_LOGI(TAG, "Réveil déclenché !");
-		app_manager_set_mood(MOOD_ANGRY);
+		app_manager_set_mood(MOOD_TIRED);
 		break;
 	}
 }
