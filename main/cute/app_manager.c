@@ -6,6 +6,7 @@
 #include "esp_log.h"
 #include "lvgl.h"
 #include "lwip/apps/sntp.h"
+#include "nfc_popup.h"
 #include "robot_cute.h"
 #include "wakeup_settings.h"
 #include <errno.h>
@@ -176,13 +177,28 @@ static void app_manager_load_config(void) {
 // ===============================
 // NFC EVENT
 // ===============================
-static bool nfc_music_playing = false;
+// Dernier tag posé, écrit par la tâche NFC et lu par la boucle principale
+static nfc_tag_t nfc_pending_tag;
+static portMUX_TYPE nfc_lock = portMUX_INITIALIZER_UNLOCKED;
 
-// Tag posé : joue NFC_MUSIC_DIR/<UID>.mp3 s'il existe
-static void app_manager_handle_nfc(const nfc_tag_t *tag) {
+// Appelée depuis la tâche NFC : pas de LVGL ici, on passe par app_msg_queue
+static void app_manager_post_msg(int msg) {
+	if (xQueueSend(app_msg_queue, &msg, pdMS_TO_TICKS(100)) != pdTRUE) {
+		ESP_LOGW(TAG, "app_msg_queue pleine, message %d perdu", msg);
+	}
+}
+
+// Tag posé (boucle principale) : ouvre la popup si NFC_MUSIC_DIR/<UID>.mp3
+// existe
+static void app_manager_handle_nfc(void) {
+	nfc_tag_t tag;
+	taskENTER_CRITICAL(&nfc_lock);
+	tag = nfc_pending_tag;
+	taskEXIT_CRITICAL(&nfc_lock);
+
 	char uid_hex[NFC_UID_MAX_LEN * 2 + 1] = "";
-	for (int i = 0; i < tag->len && i < NFC_UID_MAX_LEN; i++)
-		sprintf(uid_hex + 2 * i, "%02X", tag->uid[i]);
+	for (int i = 0; i < tag.len && i < NFC_UID_MAX_LEN; i++)
+		sprintf(uid_hex + 2 * i, "%02X", tag.uid[i]);
 
 	char path[64];
 	snprintf(path, sizeof(path), "%s/%s.mp3", NFC_MUSIC_DIR, uid_hex);
@@ -193,17 +209,22 @@ static void app_manager_handle_nfc(const nfc_tag_t *tag) {
 		return;
 	}
 
-	ESP_LOGI(TAG, "Tag %s : lecture de %s", uid_hex, path);
-	Play_Music_ex(path);
-	nfc_music_playing = true;
+	ESP_LOGI(TAG, "Tag %s : %s", uid_hex, path);
+	nfc_popup_open(path);
 }
 
-// Tag retiré : arrête la musique qu'il avait lancée
-static void app_manager_handle_nfc_removed(void) {
-	ESP_LOGI(TAG, "Tag retiré");
-	if (nfc_music_playing) {
-		Music_stop();
-		nfc_music_playing = false;
+// Messages NFC reçus par la boucle principale (tâche LVGL)
+void app_manager_handle_msg(int msg) {
+	switch (msg) {
+	case MSG_NFC_TAG:
+		app_manager_handle_nfc();
+		break;
+	case MSG_NFC_TAG_REMOVED:
+		ESP_LOGI(TAG, "Tag retiré");
+		nfc_popup_tag_removed();
+		break;
+	default:
+		break;
 	}
 }
 
@@ -214,11 +235,14 @@ void app_manager_notify(app_event_t event, void *data) {
 	switch (event) {
 
 	case EVENT_NFC_TAG:
-		app_manager_handle_nfc((const nfc_tag_t *)data);
+		taskENTER_CRITICAL(&nfc_lock);
+		nfc_pending_tag = *(const nfc_tag_t *)data;
+		taskEXIT_CRITICAL(&nfc_lock);
+		app_manager_post_msg(MSG_NFC_TAG);
 		break;
 
 	case EVENT_NFC_TAG_REMOVED:
-		app_manager_handle_nfc_removed();
+		app_manager_post_msg(MSG_NFC_TAG_REMOVED);
 		break;
 
 	case EVENT_JSON_UPDATE:

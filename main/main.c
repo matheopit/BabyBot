@@ -72,6 +72,8 @@ void app_main(void) {
 				if (app_manager_time_is_synced()) {
 					WIFI_Stop();
 				}
+			} else {
+				app_manager_handle_msg(msg);
 			}
 		}
 
