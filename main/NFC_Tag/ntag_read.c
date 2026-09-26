@@ -56,12 +56,16 @@
 
 #endif
 
-#define NFC_POLL_PERIOD_MS 2000 // intervalle entre deux recherches de tag
+#define NFC_POLL_PERIOD_MS 1000 // intervalle entre deux recherches de tag
 #define NFC_CMD_TIMEOUT_MS 200
 // Nombre d'essais d'activation par recherche (0xFF = attente infinie)
 #define NFC_PASSIVE_RETRIES 0x04
 // Lectures ratées consécutives avant de considérer le tag comme retiré
 #define NFC_MISSES_BEFORE_REMOVED 2
+// PN532 mis en veille entre deux recherches (0 : toujours éveillé)
+#define NFC_POWER_DOWN 1
+// Temps laissé à l'oscillateur du PN532 pour redémarrer après le réveil
+#define NFC_WAKEUP_DELAY_MS 10
 
 static const char *TAG = "ntag_read";
 static pn532_io_t pn532_io;
@@ -142,8 +146,9 @@ void init_nfc() {
 	ESP_LOGI(TAG, "Waiting for an ISO14443A Card ...");
 }
 
+#if NFC_POWER_DOWN
 // Met le PN532 en veille (champ RF coupé, quelques dizaines de µA).
-// Il se réveille à la prochaine commande reçue sur l'UART.
+// Il se réveille sur l'UART : voir nfc_wake_up().
 static esp_err_t nfc_power_down(void) {
 	uint8_t cmd[] = {PN532_COMMAND_POWERDOWN, 0x10}; // 0x10 : réveil par HSU
 	esp_err_t err = pn532_send_command_wait_ack(&pn532_io, cmd, sizeof(cmd),
@@ -153,10 +158,27 @@ static esp_err_t nfc_power_down(void) {
 		err =
 			pn532_read_data(&pn532_io, resp, sizeof(resp), NFC_CMD_TIMEOUT_MS);
 	}
-	// Force l'envoi du préambule de réveil HSU avant la prochaine commande
-	pn532_io.isSAMConfigDone = false;
 	return err;
 }
+
+// Réveille le PN532. Le préambule de réveil de la lib enchaîne la commande
+// sans attendre : à 921600 bauds le PN532 n'a pas le temps de redémarrer et
+// la commande est perdue. On envoie donc le réveil nous-mêmes, puis on attend.
+static esp_err_t nfc_wake_up(void) {
+	static const uint8_t wakeup_frame[] = {0x55, 0x55, 0x00, 0x00, 0x00, 0x00,
+										   0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+										   0x00, 0x00, 0x00, 0x00};
+	uart_write_bytes(HSU_UART_PORT, wakeup_frame, sizeof(wakeup_frame));
+	uart_wait_tx_done(HSU_UART_PORT, pdMS_TO_TICKS(100));
+	vTaskDelay(pdMS_TO_TICKS(NFC_WAKEUP_DELAY_MS));
+	uart_flush_input(HSU_UART_PORT);
+
+	// Réveil déjà fait : la lib ne doit pas renvoyer son préambule
+	pn532_io.isSAMConfigDone = true;
+	// Reconfigure le SAM (mode normal) et vérifie que le PN532 répond
+	return pn532_SAM_config(&pn532_io);
+}
+#endif
 
 // Cherche un tag toutes les NFC_POLL_PERIOD_MS, PN532 en veille entre deux.
 // Prévient app_manager quand un nouveau tag est posé ou quand il est retiré ;
@@ -166,6 +188,11 @@ void nfc_loop() {
 	int misses = 0;			 // lectures ratées consécutives
 
 	while (1) {
+#if NFC_POWER_DOWN
+		if (nfc_wake_up() != ESP_OK) {
+			ESP_LOGW(TAG, "PN532 wake up failed");
+		}
+#endif
 		nfc_tag_t tag = {0};
 		esp_err_t err = pn532_read_passive_target_id(
 			&pn532_io, PN532_BRTY_ISO14443A_106KBPS, tag.uid, &tag.len,
@@ -185,13 +212,11 @@ void nfc_loop() {
 			misses = 0;
 			app_manager_notify(EVENT_NFC_TAG_REMOVED, NULL);
 		}
-       // ESP_LOGI(TAG, "misses: %d", misses);
-		#if 1
-		if (misses==0)
+#if NFC_POWER_DOWN
 		if (nfc_power_down() != ESP_OK) {
 			ESP_LOGW(TAG, "PN532 power down failed");
 		}
-		#endif
+#endif
 		vTaskDelay(pdMS_TO_TICKS(NFC_POLL_PERIOD_MS));
 	}
 }
