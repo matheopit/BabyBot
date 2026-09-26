@@ -79,5 +79,6 @@ void app_main(void) {
 
 		vTaskDelay(pdMS_TO_TICKS(10));
 		lv_timer_handler();
+		LVGL_Screen_Sleep_Loop();
 	}
 }

@@ -1,4 +1,5 @@
 #include "app_manager.h"
+#include "LVGL_Driver.h"
 #include "PCM5101.h"
 #include "cJSON.h"
 #include "draw_function.h"
@@ -392,6 +393,7 @@ void wakeup(void) {
 	last_trigger = stamp;
 
 	printf("Réveil ! %02d:%02d\n", ti.tm_hour, ti.tm_min);
+	LVGL_Screen_Wake();
 	app_manager_notify(EVENT_ALARM_TRIGGER, NULL);
 	if (alarm->sound[0] != '\0') {
 		Play_Music_ex(alarm->sound);

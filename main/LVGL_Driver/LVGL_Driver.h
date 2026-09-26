@@ -16,6 +16,9 @@
 // #define LVGL_BUF_LEN  (EXAMPLE_LCD_H_RES * EXAMPLE_LCD_V_RES)
 #define EXAMPLE_LVGL_TICK_PERIOD_MS 2
 
+// Mise en veille : rétroéclairage éteint après ce délai sans toucher l'écran
+#define SCREEN_SLEEP_TIMEOUT_MS (60 * 1000)
+
 extern lv_disp_draw_buf_t
 	disp_buf; // contains internal graphic buffer(s) called draw buffer(s)
 extern lv_disp_drv_t disp_drv; // contains callback functions
@@ -29,3 +32,7 @@ void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area,
 // Call this function to initialize the screen (must be called in the main
 // function) !!!!!
 void LVGL_Init(void);
+
+// Veille de l'écran (à appeler uniquement depuis la tâche LVGL)
+void LVGL_Screen_Sleep_Loop(void); // éteint l'écran après le délai d'inactivité
+void LVGL_Screen_Wake(void);	   // rallume l'écran et relance le délai

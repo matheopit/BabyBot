@@ -39,6 +39,30 @@ void lvgl_flush_cb(lv_disp_drv_t *drv, const lv_area_t *area,
 							  offsety2 + Offset_Y + 1, color_map);
 }
 
+// Veille de l'écran
+static bool screen_asleep = false;
+// Le toucher qui rallume l'écran n'est pas transmis à LVGL (sinon il
+// ouvrirait le menu) : on l'ignore jusqu'à ce que le doigt soit relevé
+static bool wake_touch_pending = false;
+
+void LVGL_Screen_Wake(void) {
+	lv_disp_trig_activity(NULL);
+	if (screen_asleep) {
+		screen_asleep = false;
+		ESP_LOGI(TAG_LVGL, "Sortie de veille");
+		Set_Backlight(LCD_Backlight);
+	}
+}
+
+void LVGL_Screen_Sleep_Loop(void) {
+	if (!screen_asleep &&
+		lv_disp_get_inactive_time(NULL) >= SCREEN_SLEEP_TIMEOUT_MS) {
+		screen_asleep = true;
+		ESP_LOGI(TAG_LVGL, "Mise en veille de l'écran");
+		Set_Backlight(0);
+	}
+}
+
 /*Read the touchpad*/
 static void lvgl_touchpad_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
 	uint16_t touchpad_x[5] = {0};
@@ -53,7 +77,19 @@ static void lvgl_touchpad_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
 		drv->user_data, touchpad_x, touchpad_y, NULL, &touchpad_cnt, 5);
 
 	// printf("CCCCCCCCCCCCC=%d  \r\n",touchpad_cnt);
-	if (touchpad_pressed && touchpad_cnt > 0) {
+	bool pressed = touchpad_pressed && touchpad_cnt > 0;
+	if (pressed && screen_asleep) {
+		LVGL_Screen_Wake();
+		wake_touch_pending = true;
+	}
+	if (wake_touch_pending) {
+		if (!pressed)
+			wake_touch_pending = false;
+		data->state = LV_INDEV_STATE_REL;
+		return;
+	}
+
+	if (pressed) {
 		data->point.x = touchpad_x[0];
 		data->point.y = touchpad_y[0];
 		data->state = LV_INDEV_STATE_PR;
