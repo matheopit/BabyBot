@@ -26,7 +26,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 `main/` holds one directory per hardware driver (`Audio_Driver`, `LCD_Driver`, `Touch_Driver`, `LVGL_Driver`, `SD_Card`, `BAT_Driver`, `PWR_Key`, `Wireless`, `NFC_Tag`). All application and UI code lives in `main/cute/`.
 
 **Tasks and threading** (`main/main.c`):
-- `app_main` initializes SD → LCD → Audio → LVGL → `app_manager_init()` (loads `/sdcard/data/config.json`), shows the splash screen and plays `startup.mp3`. It then loops forever. Each pass it drains `app_msg_queue`, calls `wakeup()` (the alarm check) and calls `lv_timer_handler()`. **This loop is the only LVGL task, and there is no LVGL mutex.** Do not call `lv_*` from any other task. Send a message on `app_msg_queue` instead.
+- `app_main` initializes SD → LCD → Audio → LVGL → `app_manager_init()` (loads `/sdcard/settings/config.json`), shows the splash screen and plays `startup.mp3`. It then loops forever. Each pass it drains `app_msg_queue`, calls `wakeup()` (the alarm check) and calls `lv_timer_handler()`. **This loop is the only LVGL task, and there is no LVGL mutex.** Do not call `lv_*` from any other task. Send a message on `app_msg_queue` instead.
 - `Driver_Loop` (core 0) runs `Wireless_Init()`: it reads Wi-Fi credentials from `/sdcard/wifi.txt` (JSON), then on connection calls `app_manager_setup_time()` (SNTP, Europe/Paris TZ), which posts `MSG_TIME_READY`. It then polls the battery and power key every 100 ms.
 - On `MSG_TIME_READY`, the main loop switches to the robot screen, starts `nfc_task` (core 1) and stops Wi-Fi. Wi-Fi is used only for the initial time sync.
 - `nfc_task` calls `app_manager_notify(EVENT_NFC_TAG / EVENT_NFC_TAG_REMOVED)` directly from its own task. When a tag is placed, the app plays `/sdcard/<UID hex>.mp3` if that file exists. When the tag is removed, the music stops.
@@ -34,7 +34,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 **app_manager** (`cute/app_manager.[ch]`) is the central hub:
 - Global state: mood and `alarm_t` (the `days` bitmask uses bit 0 = Monday; `in_settings` suppresses the alarm while it is being edited).
 - An event dispatcher (`app_manager_notify`).
-- Config persistence to `/sdcard/data/config.json` via cJSON (`set_wakeup_config` writes it).
+- Config persistence to `/sdcard/settings/config.json` via cJSON (`set_wakeup_config` writes it).
 - Screen navigation via `app_manager_choose_frame(frame_select_t)`.
 
 **Screens ("frames")**: each frame has its own `*_create()` function. That function builds a new `lv_obj_t` screen and calls `lv_scr_load` on it:

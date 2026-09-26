@@ -14,7 +14,7 @@
 #include <sys/stat.h>
 static const char *TAG = "APP_MANAGER";
 
-#define CONFIG_DIR "/sdcard/data"
+#define CONFIG_DIR "/sdcard/settings"
 #define CONFIG_FILE_PATH CONFIG_DIR "/config.json"
 // Musique associée à un tag : NFC_MUSIC_DIR/<UID en hexa>.mp3
 #define NFC_MUSIC_DIR "/sdcard"
