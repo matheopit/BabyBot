@@ -41,7 +41,6 @@
 	}
 
 #define Volume_MAX 100
-extern bool Music_Next_Flag;
 extern uint8_t Volume;
 void Audio_Init(void);
 void Play_Music_ex(const char *filePath);
