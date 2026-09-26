@@ -3,6 +3,7 @@
 #include "lvgl.h"
 #include "robot_cute.h"
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 static lv_obj_t *alarm_screen = NULL;
@@ -18,32 +19,136 @@ static lv_style_t style_checkbox;
 
 static lv_obj_t *label_time;
 
+// Dialog de reglage de l'heure (2 rollers heures / minutes)
+static lv_obj_t *time_modal_bg = NULL;
+static lv_obj_t *roller_hour;
+static lv_obj_t *roller_min;
+static char roller_hour_opts[24 * 3];
+static char roller_min_opts[60 * 3];
+
 static void update_time_label(void) {
 	alarm_t *alarm = getAlarm();
 	lv_label_set_text_fmt(label_time, "%02d:%02d", alarm->hour, alarm->minute);
 }
 
-static void btn_plus_event_handler(lv_event_t *event) {
-	if (event->code == LV_EVENT_CLICKED) {
-		alarm_t *alarm = getAlarm();
-		alarm->minute++;
-		if (alarm->minute > 59) {
-			alarm->minute = 0;
-			alarm->hour = (alarm->hour + 1) % 24;
-		}
-		update_time_label();
+// Remplit une liste d'options "00\n01\n...", pour lv_roller
+static void build_roller_opts(char *buf, int count) {
+	char *p = buf;
+	for (int i = 0; i < count; i++) {
+		p += sprintf(p, i < count - 1 ? "%02d\n" : "%02d", i);
 	}
 }
 
-static void btn_minus_event_handler(lv_event_t *event) {
+static void time_modal_close(void) {
+	if (time_modal_bg != NULL) {
+		lv_obj_del(time_modal_bg);
+		time_modal_bg = NULL;
+	}
+}
+
+static void time_ok_event_handler(lv_event_t *event) {
 	if (event->code == LV_EVENT_CLICKED) {
 		alarm_t *alarm = getAlarm();
-		alarm->minute--;
-		if (alarm->minute < 0) {
-			alarm->minute = 59;
-			alarm->hour = (alarm->hour - 1 + 24) % 24;
-		}
+		alarm->hour = lv_roller_get_selected(roller_hour);
+		alarm->minute = lv_roller_get_selected(roller_min);
 		update_time_label();
+		time_modal_close();
+	}
+}
+
+static void time_cancel_event_handler(lv_event_t *event) {
+	if (event->code == LV_EVENT_CLICKED) {
+		time_modal_close();
+	}
+}
+
+static lv_obj_t *time_roller_create(lv_obj_t *parent, const char *opts,
+									int selected) {
+	lv_obj_t *roller = lv_roller_create(parent);
+	// Mode NORMAL : en mode INFINITE, LVGL duplique la liste 7 fois et la
+	// hauteur du label (60 x 7 lignes en police 32) depasse la limite des
+	// coordonnees LVGL -> la liste des minutes ne s'affiche plus.
+	lv_roller_set_options(roller, opts, LV_ROLLER_MODE_NORMAL);
+	lv_roller_set_visible_row_count(roller, 3);
+	lv_roller_set_selected(roller, selected, LV_ANIM_OFF);
+	lv_obj_set_width(roller, 70);
+	// Meme police pour la ligne selectionnee, sinon le rectangle bleu est
+	// dimensionne pour la police par defaut et le texte est decale
+	lv_obj_set_style_text_font(roller, &lv_font_montserrat_32, 0);
+	lv_obj_set_style_text_font(roller, &lv_font_montserrat_32,
+							   LV_PART_SELECTED);
+	lv_obj_set_style_bg_color(roller, lv_color_black(), 0);
+	lv_obj_set_style_text_color(roller, lv_color_hex(COLOR_MAIN), 0);
+	lv_obj_set_style_border_color(roller, lv_color_hex(COLOR_MAIN), 0);
+	lv_obj_set_style_bg_color(roller, lv_color_hex(COLOR_MAIN),
+							  LV_PART_SELECTED);
+	lv_obj_set_style_text_color(roller, lv_color_black(), LV_PART_SELECTED);
+	return roller;
+}
+
+static lv_obj_t *time_dialog_btn_create(lv_obj_t *parent, const char *text,
+										lv_event_cb_t cb) {
+	lv_obj_t *btn = lv_btn_create(parent);
+	lv_obj_add_style(btn, &style_btn, 0);
+	lv_obj_set_size(btn, 90, 36);
+	lv_obj_add_event_cb(btn, cb, LV_EVENT_CLICKED, NULL);
+	lv_obj_t *lbl = lv_label_create(btn);
+	lv_label_set_text(lbl, text);
+	lv_obj_center(lbl);
+	return btn;
+}
+
+// Ouvre le dialog modal de reglage de l'heure du reveil
+static void time_modal_open(void) {
+	if (time_modal_bg != NULL)
+		return;
+	alarm_t *alarm = getAlarm();
+
+	// Fond semi-transparent qui bloque les clics sur l'ecran dessous
+	time_modal_bg = lv_obj_create(alarm_screen);
+	lv_obj_remove_style_all(time_modal_bg);
+	lv_obj_set_size(time_modal_bg, LV_PCT(100), LV_PCT(100));
+	lv_obj_set_style_bg_color(time_modal_bg, lv_color_black(), 0);
+	lv_obj_set_style_bg_opa(time_modal_bg, LV_OPA_70, 0);
+	lv_obj_add_flag(time_modal_bg, LV_OBJ_FLAG_CLICKABLE);
+	lv_obj_clear_flag(time_modal_bg, LV_OBJ_FLAG_SCROLLABLE);
+
+	lv_obj_t *panel = lv_obj_create(time_modal_bg);
+	lv_obj_set_size(panel, 220, 250);
+	lv_obj_center(panel);
+	lv_obj_set_style_bg_color(panel, lv_color_black(), 0);
+	lv_obj_set_style_border_color(panel, lv_color_hex(COLOR_MAIN), 0);
+	lv_obj_set_style_border_width(panel, 2, 0);
+	lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
+
+	lv_obj_t *title = lv_label_create(panel);
+	lv_obj_add_style(title, &style_text, 0);
+	lv_label_set_text(title, "Heure du reveil");
+	lv_obj_align(title, LV_ALIGN_TOP_MID, 0, -4);
+
+	roller_hour = time_roller_create(panel, roller_hour_opts, alarm->hour);
+	lv_obj_align(roller_hour, LV_ALIGN_CENTER, -45, -8);
+
+	lv_obj_t *colon = lv_label_create(panel);
+	lv_obj_add_style(colon, &style_text, 0);
+	lv_obj_set_style_text_font(colon, &lv_font_montserrat_32, 0);
+	lv_label_set_text(colon, ":");
+	lv_obj_align(colon, LV_ALIGN_CENTER, 0, -8);
+
+	roller_min = time_roller_create(panel, roller_min_opts, alarm->minute);
+	lv_obj_align(roller_min, LV_ALIGN_CENTER, 45, -8);
+
+	lv_obj_t *btn_cancel =
+		time_dialog_btn_create(panel, "Annuler", time_cancel_event_handler);
+	lv_obj_align(btn_cancel, LV_ALIGN_BOTTOM_LEFT, 0, 4);
+	lv_obj_t *btn_ok =
+		time_dialog_btn_create(panel, "OK", time_ok_event_handler);
+	lv_obj_align(btn_ok, LV_ALIGN_BOTTOM_RIGHT, 0, 4);
+}
+
+static void label_time_event_handler(lv_event_t *event) {
+	if (event->code == LV_EVENT_CLICKED) {
+		time_modal_open();
 	}
 }
 
@@ -124,6 +229,8 @@ static void init_styles(void) {
 void ui_alarm_screen_create(void) {
 	if (alarm_screen == NULL) {
 		init_styles();
+		build_roller_opts(roller_hour_opts, 24);
+		build_roller_opts(roller_min_opts, 60);
 
 		alarm_screen = lv_obj_create(NULL);
 		lv_obj_add_style(alarm_screen, &style_bg, 0);
@@ -152,29 +259,17 @@ void ui_alarm_screen_create(void) {
 		lv_obj_set_style_bg_opa(time_container, LV_OPA_TRANSP, 0);
 		lv_obj_clear_flag(time_container, LV_OBJ_FLAG_SCROLLABLE);
 
-		// Label HH:MM
+		// Label HH:MM : occupe toute la zone, clic -> dialog de reglage
 		label_time = lv_label_create(time_container);
 		lv_obj_add_style(label_time, &style_text, 0);
+		lv_obj_set_style_text_font(label_time, &lv_font_montserrat_32, 0);
+		lv_obj_set_style_text_align(label_time, LV_TEXT_ALIGN_CENTER, 0);
+		lv_obj_set_width(label_time, LV_PCT(100));
 		update_time_label();
-		lv_obj_align(label_time, LV_ALIGN_CENTER, 0, 15);
-
-		// Bouton - (gauche)
-		lv_obj_t *btn_minus = lv_btn_create(time_container);
-		lv_obj_add_style(btn_minus, &style_btn, 0);
-		lv_obj_set_size(btn_minus, 35, 35);
-		lv_obj_align(btn_minus, LV_ALIGN_LEFT_MID, 10, 15);
-		lv_obj_t *lbl_minus = lv_label_create(btn_minus);
-		lv_label_set_text(lbl_minus, "-");
-		lv_obj_center(lbl_minus);
-
-		// Bouton + (droite)
-		lv_obj_t *btn_plus = lv_btn_create(time_container);
-		lv_obj_add_style(btn_plus, &style_btn, 0);
-		lv_obj_set_size(btn_plus, 35, 35);
-		lv_obj_align(btn_plus, LV_ALIGN_RIGHT_MID, -10, 15);
-		lv_obj_t *lbl_plus = lv_label_create(btn_plus);
-		lv_label_set_text(lbl_plus, "+");
-		lv_obj_center(lbl_plus);
+		lv_obj_center(label_time);
+		lv_obj_add_flag(label_time, LV_OBJ_FLAG_CLICKABLE);
+		lv_obj_add_event_cb(label_time, label_time_event_handler,
+							LV_EVENT_CLICKED, NULL);
 
 		// Cases à cocher (jours)
 		lv_obj_t *day_container = lv_obj_create(alarm_screen);
@@ -209,16 +304,10 @@ void ui_alarm_screen_create(void) {
 		lv_label_set_text(lbl_next, "Suivant");
 		lv_obj_center(lbl_next);
 
-		// ============================
-		// Callbacks + / -
-		// ============================
-		lv_obj_add_event_cb(btn_plus, btn_plus_event_handler, LV_EVENT_CLICKED,
-							NULL);
-		lv_obj_add_event_cb(btn_minus, btn_minus_event_handler,
-							LV_EVENT_CLICKED, NULL);
 		lv_obj_add_event_cb(btn_next, btn_next_event_handler, LV_EVENT_CLICKED,
 							NULL);
 	}
+	time_modal_close();
 	update_toggle();
 	update_time_label();
 	update_day_checks();
