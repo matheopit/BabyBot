@@ -6,7 +6,16 @@ static i2s_chan_handle_t i2s_tx_chan;
 static i2s_chan_handle_t i2s_rx_chan;
 
 uint8_t Volume = Volume_MAX - 2;
-bool Music_Next_Flag = 0;
+
+
+// Suivi de la position de lecture : format I2S courant (mis a jour par
+// bsp_i2s_reconfig_clk) et nombre de trames audio envoyees depuis le debut
+// du morceau. Ecrit par la tache du lecteur, lu par la tache LVGL.
+static uint32_t s_sample_rate = 44100;
+static uint32_t s_bytes_per_frame = 4; // 16 bits x 2 canaux
+static volatile uint32_t s_frames_played = 0;
+static volatile bool s_track_finished = false;
+static uint32_t s_duration_sec = 0;
 // static esp_err_t bsp_i2s_write(void *audio_buffer, size_t len, size_t
 // *bytes_written, uint32_t timeout_ms) {                     // I2S Write Init
 //     return i2s_channel_write(i2s_tx_chan, (char *)audio_buffer, len,
@@ -25,8 +34,11 @@ static esp_err_t bsp_i2s_write(void *audio_buffer, size_t len,
 		samples[i] = (int16_t)(samples[i] * volume_factor);
 	}
 
-	return i2s_channel_write(i2s_tx_chan, (char *)audio_buffer, len,
-							 bytes_written, timeout_ms);
+	esp_err_t ret = i2s_channel_write(i2s_tx_chan, (char *)audio_buffer, len,
+									  bytes_written, timeout_ms);
+	if (s_bytes_per_frame)
+		s_frames_played += *bytes_written / s_bytes_per_frame;
+	return ret;
 }
 static esp_err_t bsp_i2s_reconfig_clk(uint32_t rate, uint32_t bits_cfg,
 									  i2s_slot_mode_t ch) { // I2S Init
@@ -37,6 +49,8 @@ static esp_err_t bsp_i2s_reconfig_clk(uint32_t rate, uint32_t bits_cfg,
 			(i2s_data_bit_width_t)bits_cfg, ch),
 		.gpio_cfg = BSP_I2S_GPIO_CFG,
 	};
+	s_sample_rate = rate;
+	s_bytes_per_frame = (bits_cfg / 8) * (ch == I2S_SLOT_MODE_MONO ? 1 : 2);
 	ret |= i2s_channel_disable(i2s_tx_chan);
 	ret |= i2s_channel_reconfig_std_clock(i2s_tx_chan, &std_cfg.clk_cfg);
 	ret |= i2s_channel_reconfig_std_slot(i2s_tx_chan, &std_cfg.slot_cfg);
@@ -79,7 +93,7 @@ static audio_player_callback_event_t event;
 static void audio_player_callback(audio_player_cb_ctx_t *ctx) {
 	if (ctx->audio_event == AUDIO_PLAYER_CALLBACK_EVENT_IDLE) {
 		ESP_LOGI(TAG, "Playback finished");
-		Music_Next_Flag = 1;
+		s_track_finished = true;
 	}
 	if (ctx->audio_event == expected_event) {
 		xQueueSend(event_queue, &(ctx->audio_event), 0);
@@ -125,6 +139,139 @@ void Audio_Init(void) {
 	}
 }
 
+/* ==================== Duree d'un fichier MP3 ==================== */
+
+// Debits (kbit/s) Layer III : [0] MPEG1, [1] MPEG2 / MPEG2.5
+static const uint16_t mp3_bitrates[2][15] = {
+	{0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320},
+	{0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160},
+};
+static const uint32_t mp3_samplerates[3] = {44100, 48000, 32000};
+
+typedef struct {
+	bool mpeg1;
+	uint32_t bitrate;	  // bit/s
+	uint32_t sample_rate; // Hz
+	bool mono;
+	uint32_t frame_len; // octets
+} mp3_frame_hdr_t;
+
+// Decode un en-tete de trame MPEG Layer III, false s'il est invalide
+static bool mp3_parse_header(const uint8_t *h, mp3_frame_hdr_t *out) {
+	if (h[0] != 0xFF || (h[1] & 0xE0) != 0xE0)
+		return false;
+	uint8_t ver = (h[1] >> 3) & 3; // 0 = 2.5, 1 = reserve, 2 = 2, 3 = 1
+	uint8_t layer = (h[1] >> 1) & 3;
+	uint8_t br_idx = h[2] >> 4;
+	uint8_t sr_idx = (h[2] >> 2) & 3;
+	if (ver == 1 || layer != 1 || br_idx == 0 || br_idx == 15 || sr_idx == 3)
+		return false;
+	out->mpeg1 = (ver == 3);
+	out->bitrate = mp3_bitrates[out->mpeg1 ? 0 : 1][br_idx] * 1000;
+	out->sample_rate = mp3_samplerates[sr_idx] >> (ver == 3	  ? 0
+												   : ver == 2 ? 1
+															  : 2);
+	out->mono = ((h[3] >> 6) == 3);
+	out->frame_len = (out->mpeg1 ? 144 : 72) * out->bitrate / out->sample_rate +
+					 ((h[2] >> 1) & 1);
+	return true;
+}
+
+static uint32_t read_be32(const uint8_t *p) {
+	return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) |
+		   ((uint32_t)p[2] << 8) | p[3];
+}
+
+// Estime la duree (s) d'un MP3 : en-tete Xing/Info ou VBRI si present,
+// sinon taille des donnees / debit (CBR). Le fichier est rembobine.
+static uint32_t mp3_get_duration(FILE *f) {
+	uint32_t duration = 0;
+	// Tampon sur le tas : la pile de la tache principale (3,5 Ko) est trop
+	// petite pour l'y allouer
+	const size_t buf_size = 2048;
+	uint8_t *buf = malloc(buf_size);
+	if (!buf)
+		return 0;
+	long audio_start = 0;
+
+	fseek(f, 0, SEEK_END);
+	long file_size = ftell(f);
+	fseek(f, 0, SEEK_SET);
+
+	// Saute le tag ID3v2 (taille "syncsafe" sur 4 x 7 bits)
+	if (fread(buf, 1, 10, f) == 10 && memcmp(buf, "ID3", 3) == 0) {
+		audio_start = 10 + (((uint32_t)(buf[6] & 0x7F) << 21) |
+							((uint32_t)(buf[7] & 0x7F) << 14) |
+							((uint32_t)(buf[8] & 0x7F) << 7) | (buf[9] & 0x7F));
+		if (buf[5] & 0x10) // pied de tag present
+			audio_start += 10;
+	}
+
+	// Taille du tag ID3v1 eventuel en fin de fichier
+	long audio_end = file_size;
+	if (file_size >= 128) {
+		fseek(f, file_size - 128, SEEK_SET);
+		if (fread(buf, 1, 3, f) == 3 && memcmp(buf, "TAG", 3) == 0)
+			audio_end -= 128;
+	}
+
+	fseek(f, audio_start, SEEK_SET);
+	size_t n = fread(buf, 1, buf_size, f);
+
+	// Cherche la premiere trame valide (confirmee par la trame suivante)
+	mp3_frame_hdr_t hdr;
+	size_t pos;
+	bool found = false;
+	for (pos = 0; pos + 4 <= n; pos++) {
+		if (!mp3_parse_header(&buf[pos], &hdr))
+			continue;
+		mp3_frame_hdr_t next;
+		size_t next_pos = pos + hdr.frame_len;
+		if (next_pos + 4 > n || mp3_parse_header(&buf[next_pos], &next)) {
+			found = true;
+			break;
+		}
+	}
+
+	if (found) {
+		uint32_t samples_per_frame = hdr.mpeg1 ? 1152 : 576;
+		uint32_t side_info =
+			hdr.mpeg1 ? (hdr.mono ? 17 : 32) : (hdr.mono ? 9 : 17);
+		const uint8_t *xing = &buf[pos + 4 + side_info];
+		const uint8_t *vbri = &buf[pos + 4 + 32];
+		uint32_t frames = 0;
+
+		if (pos + 4 + side_info + 12 <= n &&
+			(memcmp(xing, "Xing", 4) == 0 || memcmp(xing, "Info", 4) == 0) &&
+			(read_be32(xing + 4) & 0x1)) {
+			frames = read_be32(xing + 8);
+		} else if (pos + 4 + 32 + 18 <= n && memcmp(vbri, "VBRI", 4) == 0) {
+			frames = read_be32(vbri + 14);
+		}
+
+		if (frames) {
+			duration = (uint32_t)((uint64_t)frames * samples_per_frame /
+								  hdr.sample_rate);
+		} else {
+			long audio_bytes = audio_end - (audio_start + (long)pos);
+			if (audio_bytes > 0)
+				duration = (uint32_t)((uint64_t)audio_bytes * 8 / hdr.bitrate);
+		}
+	}
+
+	free(buf);
+	fseek(f, 0, SEEK_SET);
+	ESP_LOGI(TAG, "Duree estimee : %lu s", (unsigned long)duration);
+	return duration;
+}
+
+// Reinitialise le suivi de lecture pour un nouveau morceau
+static void Music_track_start(FILE *f) {
+	s_duration_sec = mp3_get_duration(f);
+	s_frames_played = 0;
+	s_track_finished = false;
+}
+
 void Play_Music_ex(const char *filePath) {
 	Music_pause();
 	Music_File = Open_File(filePath);
@@ -132,6 +279,7 @@ void Play_Music_ex(const char *filePath) {
 		ESP_LOGE(TAG, "Failed to open MP3 file: %s", filePath);
 		return;
 	}
+	Music_track_start(Music_File);
 	expected_event = AUDIO_PLAYER_CALLBACK_EVENT_PLAYING;
 	esp_err_t ret = audio_player_play(Music_File);
 	if (ret != ESP_OK) {
@@ -165,6 +313,7 @@ void Play_Music(const char *directory, const char *fileName) {
 		ESP_LOGE(TAG, "Failed to open MP3 file: %s", filePath);
 		return;
 	}
+	Music_track_start(Music_File);
 
 	expected_event = AUDIO_PLAYER_CALLBACK_EVENT_PLAYING;
 	esp_err_t ret = audio_player_play(Music_File);
@@ -236,6 +385,19 @@ void Music_stop(void) {
 			ESP_LOGE(TAG, "Failed to stop audio: %s", esp_err_to_name(ret));
 		}
 	}
+}
+
+// Duree totale du morceau en cours, en secondes (0 si inconnue)
+uint32_t Music_Duration(void) { return s_duration_sec; }
+
+// Temps ecoule depuis le debut du morceau, en secondes
+uint32_t Music_Elapsed(void) {
+	// En fin de morceau, on renvoie au moins la duree pour que l'UI
+	// detecte la fin meme si l'estimation etait un peu trop longue
+	uint32_t elapsed = s_sample_rate ? s_frames_played / s_sample_rate : 0;
+	if (s_track_finished && elapsed < s_duration_sec)
+		return s_duration_sec;
+	return elapsed;
 }
 
 void Volume_adjustment(uint8_t Vol) {
