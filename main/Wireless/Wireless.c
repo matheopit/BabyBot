@@ -63,7 +63,7 @@ void WIFI_Init(void *arg) {
 										&instance_got_ip);
 
 	wifi_config_t sta_cfg = {0};
-	read_wifi_json("/sdcard", "wifi.txt", &sta_cfg.sta);
+	read_wifi_json("/sdcard/settings", "wifi.txt", &sta_cfg.sta);
 	esp_wifi_set_config(WIFI_IF_STA, &sta_cfg);
 	esp_wifi_start(); // connect is issued on WIFI_EVENT_STA_START
 	// WIFI_NUM = WIFI_Scan();

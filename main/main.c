@@ -51,7 +51,7 @@ void app_main(void) {
 	vTaskDelay(pdMS_TO_TICKS(20)); // fin du dernier transfert DMA
 	LCD_Display_On();
 	Volume_adjustment(10);
-	//Play_Music("/sdcard", "startup.mp3");
+	Play_Music("/sdcard", "startup.mp3");
 	Driver_Init();
 
 	while (1) {
