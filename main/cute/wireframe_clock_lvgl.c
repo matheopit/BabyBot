@@ -14,12 +14,13 @@
  *   clignent periodiquement pour un cote "petit robot mignon".
  * - Affichage numerique HH:MM:SS (24h) sous le cadran, mis a jour chaque
  *   seconde en meme temps que les aiguilles.
- * - Un clic n'importe ou sur l'ecran declenche un callback utilisateur
- *   (a enregistrer via wireframe_clock_set_click_cb), typiquement pour
- *   changer d'ecran/frame.
+ * - Zone cliquable en bas de l'ecran (meme principe que le lecteur MP3) :
+ *   un clic declenche un callback utilisateur (a enregistrer via
+ *   wireframe_clock_set_click_cb), typiquement pour changer d'ecran/frame.
  *
- * Ecran cible : 240 x 320, horloge centree. Repartition verticale :
- *   yeux (haut) / cadran analogique (milieu) / heure numerique (bas).
+ * Ecran cible : 240 x 320, horloge remontee de CLOCK_SHIFT_Y pour laisser
+ * la place a la zone basse. Repartition verticale :
+ *   yeux (haut) / cadran analogique / heure numerique / zone cliquable.
  *
  * DEPENDANCE : ce fichier utilise sinf()/cosf() de <math.h> pour placer
  * les graduations et les aiguilles -> penser a lier la libm (-lm) sur
@@ -33,14 +34,18 @@
 
 #include "draw_function.h"
 #include "lvgl.h"
+#include "pie_icons.h"
 #include <math.h>
 #include <stdint.h>
 #include <time.h>
 
 #define SCREEN_W 240
 #define SCREEN_H 320
-#define CLOCK_CENTER_X (SCREEN_W / 2) /* 120 */
-#define CLOCK_CENTER_Y (SCREEN_H / 2) /* 160 */
+/* Decalage vertical de toute l'horloge (vers le haut) pour liberer la
+ * zone cliquable en bas de l'ecran */
+#define CLOCK_SHIFT_Y (-28)
+#define CLOCK_CENTER_X (SCREEN_W / 2)				   /* 120 */
+#define CLOCK_CENTER_Y (SCREEN_H / 2 + CLOCK_SHIFT_Y) /* 132 */
 #define CLOCK_RADIUS 90
 #define CLOCK_DIAMETER (CLOCK_RADIUS * 2)
 
@@ -56,13 +61,16 @@
 #define EYE_MIN_HEIGHT 2 /* hauteur "yeux fermes" pendant le clignement */
 #define EYE_SPACING_X 26 /* ecart au centre pour chaque oeil */
 #define EYE_Y_OFFSET                                                           \
-	(-(CLOCK_RADIUS) - 28) /* offset / centre de l'ecran, vers le haut */
+	(CLOCK_SHIFT_Y - (CLOCK_RADIUS) - 28) /* offset / centre de l'ecran */
 #define EYE_BLINK_PERIOD_MS 4000
 #define EYE_BLINK_ANIM_MS 110
 
 /* Affichage numerique : place dans la marge sous le cadran */
 #define DIGITAL_Y_OFFSET                                                       \
-	(CLOCK_RADIUS + 28) /* offset / centre de l'ecran, vers le bas */
+	(CLOCK_SHIFT_Y + CLOCK_RADIUS + 28) /* offset / centre de l'ecran */
+
+/* Zone cliquable libre, en bas de l'ecran (sous l'heure numerique) */
+#define BOTTOM_ZONE_Y 264 /* haut de la zone */
 
 static lv_color_t clock_color;
 
@@ -124,7 +132,7 @@ static void wireframe_clock_build_face(lv_obj_t *parent) {
 	lv_obj_t *face = lv_obj_create(parent);
 	lv_obj_remove_style_all(face);
 	lv_obj_set_size(face, CLOCK_DIAMETER, CLOCK_DIAMETER);
-	lv_obj_align(face, LV_ALIGN_CENTER, 0, 0);
+	lv_obj_align(face, LV_ALIGN_CENTER, 0, CLOCK_SHIFT_Y);
 	lv_obj_set_style_radius(face, LV_RADIUS_CIRCLE, 0);
 	lv_obj_set_style_bg_opa(face, LV_OPA_TRANSP, 0);
 	lv_obj_set_style_border_width(face, 2, 0);
@@ -238,6 +246,53 @@ static void eye_blink_timer_cb(lv_timer_t *timer) {
 	eye_blink_once(eye_right);
 }
 
+/* ---------- Zone cliquable libre, en bas de l'ecran ---------- */
+
+static void bottom_zone_event_cb(lv_event_t *e) {
+	if (lv_event_get_code(e) != LV_EVENT_CLICKED)
+		return;
+	if (clock_click_cb != NULL) {
+		clock_click_cb();
+	}
+}
+
+/**
+ * @brief Enregistre le callback appele au clic sur la zone basse de
+ *        l'ecran de l'horloge. Passer NULL pour desactiver.
+ */
+void wireframe_clock_set_click_cb(wireframe_clock_click_cb_t cb) {
+	clock_click_cb = cb;
+}
+
+static void bottom_zone_create(lv_obj_t *parent) {
+	lv_obj_t *bottom_zone = lv_obj_create(parent);
+	lv_obj_remove_style_all(bottom_zone);
+	lv_obj_set_size(bottom_zone, SCREEN_W, SCREEN_H - BOTTOM_ZONE_Y);
+	lv_obj_align(bottom_zone, LV_ALIGN_TOP_MID, 0, BOTTOM_ZONE_Y);
+	lv_obj_set_style_bg_opa(bottom_zone, LV_OPA_TRANSP, 0);
+	lv_obj_add_flag(bottom_zone, LV_OBJ_FLAG_CLICKABLE);
+	lv_obj_clear_flag(bottom_zone, LV_OBJ_FLAG_SCROLLABLE);
+	lv_obj_add_event_cb(bottom_zone, bottom_zone_event_cb, LV_EVENT_CLICKED,
+						NULL);
+
+	/* Petit trait discret en haut de la zone, pour signaler qu'elle est
+	 * cliquable (purement visuel, ne bloque pas le clic) */
+	lv_obj_t *handle = lv_obj_create(bottom_zone);
+	lv_obj_remove_style_all(handle);
+	lv_obj_set_size(handle, 36, 3);
+	lv_obj_set_style_bg_color(handle, clock_color, 0);
+	lv_obj_set_style_bg_opa(handle, LV_OPA_50, 0);
+	lv_obj_set_style_radius(handle, 2, 0);
+	lv_obj_align(handle, LV_ALIGN_TOP_MID, 0, 6);
+	lv_obj_clear_flag(handle, LV_OBJ_FLAG_CLICKABLE);
+
+	/* Icone robot au centre de la zone (le clic passe a bottom_zone) */
+	lv_obj_t *robot_icon = lv_img_create(bottom_zone);
+	lv_img_set_src(robot_icon, &icon_section_4);
+	lv_obj_align(robot_icon, LV_ALIGN_CENTER, 0, 4);
+	lv_obj_clear_flag(robot_icon, LV_OBJ_FLAG_CLICKABLE);
+}
+
 /**
  * @brief Construit l'horloge animee wireframe sur l'ecran/conteneur donne.
  * @param parent Ecran ou conteneur parent (ex: lv_scr_act())
@@ -248,10 +303,6 @@ void wireframe_clock_create(lv_obj_t *parent) {
 	lv_obj_set_style_bg_color(parent, lv_color_black(), 0);
 	lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, 0);
 
-	/* Clic n'importe ou sur l'ecran -> callback utilisateur. Les elements
-	 * du dessin (lignes, yeux, label) sont tous non-cliquables, donc le
-	 * clic remonte toujours jusqu'ici, quel que soit l'endroit touche. */
-	lv_obj_add_flag(parent, LV_OBJ_FLAG_CLICKABLE);
 	wireframe_clock_build_face(parent);
 
 	/* Yeux LED "robot mignon", au-dessus du cadran */
@@ -273,7 +324,7 @@ void wireframe_clock_create(lv_obj_t *parent) {
 	lv_obj_set_style_radius(pivot, LV_RADIUS_CIRCLE, 0);
 	lv_obj_set_style_bg_color(pivot, clock_color, 0);
 	lv_obj_set_style_bg_opa(pivot, LV_OPA_COVER, 0);
-	lv_obj_align(pivot, LV_ALIGN_CENTER, 0, 0);
+	lv_obj_align(pivot, LV_ALIGN_CENTER, 0, CLOCK_SHIFT_Y);
 	lv_obj_clear_flag(pivot, LV_OBJ_FLAG_CLICKABLE);
 	lv_obj_move_foreground(pivot);
 
@@ -286,6 +337,9 @@ void wireframe_clock_create(lv_obj_t *parent) {
 	lv_obj_clear_flag(digital_label, LV_OBJ_FLAG_CLICKABLE);
 	lv_label_set_text(digital_label,
 					  "00:00:00"); /* place-holder avant 1ere maj */
+
+	/* Zone cliquable en bas -> callback wireframe_clock_set_click_cb() */
+	bottom_zone_create(parent);
 
 	/* Premiere mise a jour immediate, puis toutes les secondes */
 	clock_timer_cb(NULL);
@@ -307,11 +361,15 @@ void wireframe_clock_destroy(void) {
 	}
 }
 
+static void on_clock_bottom_clicked(void) {
+	pie_dialog_open(lv_scr_act());
+}
+
 void clock_create() {
 	if (!horloge_screen) {
 		horloge_screen = lv_obj_create(NULL);
 		wireframe_clock_create(horloge_screen);
-		create_full_click_zone(horloge_screen);
+		wireframe_clock_set_click_cb(on_clock_bottom_clicked);
 	}
 	lv_scr_load(horloge_screen);
 }
@@ -336,5 +394,6 @@ void clock_create() {
  *
  * NOTE - repartition verticale (a ajuster si CLOCK_RADIUS change) :
  * yeux a EYE_Y_OFFSET, cadran de -CLOCK_RADIUS a +CLOCK_RADIUS, heure
- * numerique a DIGITAL_Y_OFFSET, tous relatifs au centre de l'ecran.
+ * numerique a DIGITAL_Y_OFFSET, tous relatifs au centre de l'ecran et
+ * decales de CLOCK_SHIFT_Y ; la zone cliquable commence a BOTTOM_ZONE_Y.
  */
