@@ -7,6 +7,8 @@
 
 #define COLOR_MAIN 0x4DA6FF
 #define MSG_TIME_READY 1
+#define MSG_NFC_TAG 2		 // tag posé (voir app_manager_handle_msg)
+#define MSG_NFC_TAG_REMOVED 3 // tag retiré
 #define ALARM_SOUND_PATH_LEN 128
 extern QueueHandle_t app_msg_queue;
 
@@ -39,14 +41,15 @@ typedef struct {
 } nfc_tag_t;
 
 typedef enum {
-	EVENT_NFC_TAG,		   // data : nfc_tag_t* du tag posé
-	EVENT_NFC_TAG_REMOVED, // data : NULL
+	EVENT_NFC_TAG,		   // data : nfc_tag_t* du tag posé (tâche NFC)
+	EVENT_NFC_TAG_REMOVED, // data : NULL (tâche NFC)
 	EVENT_JSON_UPDATE,
 	EVENT_ALARM_TRIGGER
 } app_event_t;
 
 void app_manager_init(void);
 void app_manager_notify(app_event_t event, void *data);
+void app_manager_handle_msg(int msg);
 void app_manager_set_mood(mood_t mood);
 mood_t app_manager_get_mood(void);
 mood_t app_manager_get_mood();

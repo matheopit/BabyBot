@@ -10,8 +10,9 @@
  *   - Controles : precedent / lecture-pause (bouton unique qui bascule
  *     d'icone) / suivant.
  *   - Reglage du son : icone haut-parleur (clic = mute/unmute) + slider.
- *   - Bouton "Parcourir" qui ouvre une liste modale des fichiers .mp3
- *     trouves sur la carte SD (via <dirent.h> ou l'API lv_fs).
+ *   - Bouton "Parcourir" qui ouvre un explorateur modal de la carte SD
+ *     (via <dirent.h> ou l'API lv_fs) : on entre dans les dossiers, ".."
+ *     remonte, un clic sur un .mp3 le joue.
  *   - Zone cliquable en bas de l'ecran : comportement LIBRE, non
  *     implemente ici -- juste un callback a enregistrer (voir
  *     mp3_player_set_bottom_click_cb), meme principe que
@@ -43,7 +44,9 @@
 #include "pie_icons.h"
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #define MP3_USE_POSIX_FS                                                       \
 	1 /* 1 = <dirent.h> direct, 0 = lv_fs (lettre de lecteur) */
@@ -63,6 +66,8 @@
 			   * par la lettre de lecteur enregistree,                         \
 			   * ex: "S:/sdcard". */
 #define MAX_TRACKS 64
+#define MAX_BROWSE_ENTRIES 64 /* dossiers + .mp3 affiches par dossier */
+#define MAX_NAME_LEN 128	  /* nom d'une entree (sans le chemin) */
 #define MAX_PATH_LEN                                                           \
 	300 /* marge large : d_name peut faire                                     \
 		 * jusqu'a 255 caracteres selon la                                     \
@@ -122,7 +127,19 @@ static lv_timer_t *ui_update_timer = NULL;
 /* Boite de dialogue de selection (meme pattern que pie_dialog_lvgl.c) */
 static lv_obj_t *browse_modal_bg = NULL;
 static lv_obj_t *browse_panel = NULL;
+static lv_obj_t *browse_title_label = NULL;
 static lv_obj_t *browse_list_container = NULL;
+
+/* Explorateur : dossier affiche (garde entre deux ouvertures) et son
+ * contenu. La playlist track_paths[] est remplie a partir de ce dossier
+ * quand on lance un fichier. */
+typedef struct {
+	char name[MAX_NAME_LEN];
+	bool is_dir;
+} browse_entry_t;
+static char browse_dir[MAX_PATH_LEN] = SD_MUSIC_DIR;
+static browse_entry_t browse_entries[MAX_BROWSE_ENTRIES];
+static uint32_t browse_entry_count = 0;
 
 /* Zone cliquable libre, en bas de l'ecran : comportement non impose,
  * a brancher via mp3_player_set_bottom_click_cb(). */
@@ -274,7 +291,7 @@ static void ui_update_timer_cb(lv_timer_t *timer) {
 	}
 }
 
-/* ---------- Liste de selection (modale, meme pattern que pie_dialog)
+/* ---------- Explorateur de fichiers (modale, meme pattern que pie_dialog)
  * ---------- */
 
 static void browse_modal_close(void) {
@@ -283,6 +300,7 @@ static void browse_modal_close(void) {
 	lv_obj_del(browse_modal_bg);
 	browse_modal_bg = NULL;
 	browse_panel = NULL;
+	browse_title_label = NULL;
 	browse_list_container = NULL;
 }
 
@@ -300,122 +318,228 @@ static void browse_close_btn_event_cb(lv_event_t *e) {
 	browse_modal_close();
 }
 
-static void track_row_event_cb(lv_event_t *e) {
-	if (lv_event_get_code(e) != LV_EVENT_CLICKED)
-		return;
-	uint32_t idx = (uint32_t)(uintptr_t)lv_event_get_user_data(e);
-	load_and_play_track((int32_t)idx);
-	browse_modal_close();
+static bool browse_at_root(void) {
+	return strcmp(browse_dir, SD_MUSIC_DIR) == 0;
 }
 
-/* Scanne SD_MUSIC_DIR et remplit track_paths[]. Deux implementations
- * selon MP3_USE_POSIX_FS (voir commentaire en tete de fichier). */
-static void scan_sd_music_dir(void) {
-	track_count = 0;
+/* Ajoute une entree (dossier ou .mp3) ; ignore les fichiers caches, le
+ * dossier settings a la racine et les noms trop longs */
+static void browse_add_entry(const char *name, bool is_dir) {
+	if (browse_entry_count >= MAX_BROWSE_ENTRIES)
+		return;
+	if (name[0] == '.' || strcmp(name, "System Volume Information") == 0)
+		return;
+	if (!is_dir && !has_mp3_extension(name))
+		return;
+	/* Dossier de configuration (config.json...), pas de musique dedans */
+	if (is_dir && browse_at_root() && strcasecmp(name, "settings") == 0)
+		return;
+	if (strlen(name) >= MAX_NAME_LEN) {
+		printf("mp3_player: nom trop long, ignore: %s\n", name);
+		return;
+	}
+	strcpy(browse_entries[browse_entry_count].name, name);
+	browse_entries[browse_entry_count].is_dir = is_dir;
+	browse_entry_count++;
+}
+
+/* Dossiers d'abord, puis fichiers, chacun par ordre alphabetique */
+static int browse_entry_cmp(const void *a, const void *b) {
+	const browse_entry_t *ea = a;
+	const browse_entry_t *eb = b;
+	if (ea->is_dir != eb->is_dir)
+		return ea->is_dir ? -1 : 1;
+	return strcasecmp(ea->name, eb->name);
+}
+
+/* Liste le contenu de browse_dir dans browse_entries[]. Deux
+ * implementations selon MP3_USE_POSIX_FS (voir commentaire en tete de
+ * fichier). Retourne false si le dossier ne peut pas etre ouvert. */
+static bool scan_browse_dir(void) {
+	browse_entry_count = 0;
 
 #if MP3_USE_POSIX_FS
-	DIR *dir = opendir(SD_MUSIC_DIR);
+	DIR *dir = opendir(browse_dir);
 	if (dir == NULL) {
 		printf("mp3_player: impossible d'ouvrir %s (opendir a echoue - "
 			   "verifier que la carte SD est bien montee a cet endroit)\n",
-			   SD_MUSIC_DIR);
-		return;
+			   browse_dir);
+		return false;
 	}
 
 	struct dirent *entry;
-	while (track_count < MAX_TRACKS && (entry = readdir(dir)) != NULL) {
-		if (!has_mp3_extension(entry->d_name))
-			continue;
-
-		int written = snprintf(track_paths[track_count], MAX_PATH_LEN, "%s/%s",
-							   SD_MUSIC_DIR, entry->d_name);
-		if (written < 0 || (size_t)written >= MAX_PATH_LEN) {
-			printf("mp3_player: chemin trop long, fichier ignore: %s\n",
-				   entry->d_name);
-			continue; /* ne pas incrementer track_count : entree ignoree */
-		}
-		track_count++;
-	}
+	while ((entry = readdir(dir)) != NULL)
+		browse_add_entry(entry->d_name, entry->d_type == DT_DIR);
 	closedir(dir);
 
 #else
 	lv_fs_dir_t dir;
-	lv_fs_res_t res = lv_fs_dir_open(&dir, SD_MUSIC_DIR);
+	lv_fs_res_t res = lv_fs_dir_open(&dir, browse_dir);
 	if (res != LV_FS_RES_OK) {
 		printf("mp3_player: impossible d'ouvrir %s (res=%d) - verifier que "
 			   "le chemin commence bien par la lettre de lecteur enregistree "
 			   "(ex: 'S:/sdcard', pas juste '/sdcard')\n",
-			   SD_MUSIC_DIR, (int)res);
-		return;
+			   browse_dir, (int)res);
+		return false;
 	}
 
-	char fname[96];
-	while (track_count < MAX_TRACKS) {
+	char fname[256];
+	while (1) {
 		res = lv_fs_dir_read(&dir, fname);
 		if (res != LV_FS_RES_OK || fname[0] == '\0')
 			break;
-		if (!has_mp3_extension(fname))
-			continue;
-
-		int written = snprintf(track_paths[track_count], MAX_PATH_LEN, "%s/%s",
-							   SD_MUSIC_DIR, fname);
-		if (written < 0 || (size_t)written >= MAX_PATH_LEN) {
-			printf("mp3_player: chemin trop long, fichier ignore: %s\n", fname);
-			continue;
-		}
-		track_count++;
+		/* lv_fs prefixe les noms de dossiers par '/' */
+		if (fname[0] == '/')
+			browse_add_entry(fname + 1, true);
+		else
+			browse_add_entry(fname, false);
 	}
 	lv_fs_dir_close(&dir);
 #endif
+
+	qsort(browse_entries, browse_entry_count, sizeof(browse_entries[0]),
+		  browse_entry_cmp);
+	return true;
 }
 
-static void build_track_list_rows(lv_obj_t *list_container) {
-	if (track_count == 0) {
+/* La playlist (precedent/suivant) devient la liste des .mp3 du dossier
+ * affiche ; lance ensuite le fichier choisi */
+static void browse_play_file(uint32_t entry_idx) {
+	int32_t play_idx = -1;
+	track_count = 0;
+	for (uint32_t i = 0; i < browse_entry_count && track_count < MAX_TRACKS;
+		 i++) {
+		if (browse_entries[i].is_dir)
+			continue;
+		int written = snprintf(track_paths[track_count], MAX_PATH_LEN, "%s/%s",
+							   browse_dir, browse_entries[i].name);
+		if (written < 0 || (size_t)written >= MAX_PATH_LEN)
+			continue; /* chemin trop long : fichier ignore */
+		if (i == entry_idx)
+			play_idx = (int32_t)track_count;
+		track_count++;
+	}
+	load_and_play_track(play_idx);
+}
+
+static void browse_refresh(void);
+
+static void browse_row_event_cb(lv_event_t *e) {
+	if (lv_event_get_code(e) != LV_EVENT_CLICKED)
+		return;
+	uint32_t idx = (uint32_t)(uintptr_t)lv_event_get_user_data(e);
+	if (idx >= browse_entry_count)
+		return;
+
+	if (!browse_entries[idx].is_dir) {
+		browse_play_file(idx);
+		browse_modal_close();
+		return;
+	}
+
+	size_t len = strlen(browse_dir);
+	if (len + 1 + strlen(browse_entries[idx].name) >= MAX_PATH_LEN) {
+		printf("mp3_player: chemin trop long: %s/%s\n", browse_dir,
+			   browse_entries[idx].name);
+		return;
+	}
+	snprintf(browse_dir + len, MAX_PATH_LEN - len, "/%s",
+			 browse_entries[idx].name);
+	browse_refresh();
+}
+
+static void browse_parent_event_cb(lv_event_t *e) {
+	if (lv_event_get_code(e) != LV_EVENT_CLICKED)
+		return;
+	if (browse_at_root())
+		return;
+	char *slash = strrchr(browse_dir, '/');
+	if (slash != NULL)
+		*slash = '\0';
+	/* ne jamais remonter au-dessus de SD_MUSIC_DIR */
+	if (strlen(browse_dir) < strlen(SD_MUSIC_DIR))
+		strcpy(browse_dir, SD_MUSIC_DIR);
+	browse_refresh();
+}
+
+static void browse_row_create(lv_obj_t *list_container, const char *symbol,
+							  const char *text, lv_event_cb_t cb,
+							  uint32_t user_idx) {
+	lv_obj_t *row = lv_obj_create(list_container);
+	lv_obj_remove_style_all(row);
+	lv_obj_set_size(row, lv_pct(100), 34);
+	lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
+	lv_obj_set_style_border_side(row, LV_BORDER_SIDE_BOTTOM, 0);
+	lv_obj_set_style_border_width(row, 1, 0);
+	lv_obj_set_style_border_color(row, lv_color_hex(0x224a63),
+								  0); /* accent assombri, simple separateur */
+	lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
+	lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
+	lv_obj_add_event_cb(row, cb, LV_EVENT_CLICKED, (void *)(uintptr_t)user_idx);
+
+	lv_obj_t *icon = lv_label_create(row);
+	lv_label_set_text(icon, symbol);
+	lv_obj_set_style_text_color(icon, wire_color, 0);
+	lv_obj_align(icon, LV_ALIGN_LEFT_MID, 0, 0);
+	lv_obj_clear_flag(icon, LV_OBJ_FLAG_CLICKABLE);
+
+	lv_obj_t *name_lbl = lv_label_create(row);
+	lv_label_set_text(name_lbl, text);
+	lv_label_set_long_mode(name_lbl, LV_LABEL_LONG_DOT);
+	lv_obj_set_width(name_lbl, lv_pct(85));
+	lv_obj_set_style_text_color(name_lbl, wire_color, 0);
+	lv_obj_align(name_lbl, LV_ALIGN_LEFT_MID, 24, 0);
+	lv_obj_clear_flag(name_lbl, LV_OBJ_FLAG_CLICKABLE);
+}
+
+static void build_browse_rows(lv_obj_t *list_container) {
+	if (!browse_at_root())
+		browse_row_create(list_container, LV_SYMBOL_UP, "..",
+						  browse_parent_event_cb, 0);
+
+	if (browse_entry_count == 0) {
 		lv_obj_t *empty_lbl = lv_label_create(list_container);
-		lv_label_set_text(empty_lbl,
-						  "Aucun fichier .mp3 trouve sur\n" SD_MUSIC_DIR);
+		lv_label_set_text(empty_lbl, "Aucun dossier ni fichier .mp3");
+		lv_obj_set_width(empty_lbl, lv_pct(100));
 		lv_obj_set_style_text_color(empty_lbl, wire_color, 0);
 		lv_obj_set_style_text_align(empty_lbl, LV_TEXT_ALIGN_CENTER, 0);
 		lv_obj_clear_flag(empty_lbl, LV_OBJ_FLAG_CLICKABLE);
 		return;
 	}
 
-	for (uint32_t i = 0; i < track_count; i++) {
-		lv_obj_t *row = lv_obj_create(list_container);
-		lv_obj_remove_style_all(row);
-		lv_obj_set_size(row, lv_pct(100), 34);
-		lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, 0);
-		lv_obj_set_style_border_side(row, LV_BORDER_SIDE_BOTTOM, 0);
-		lv_obj_set_style_border_width(row, 1, 0);
-		lv_obj_set_style_border_color(
-			row, lv_color_hex(0x224a63),
-			0); /* accent assombri, simple separateur */
-		lv_obj_add_flag(row, LV_OBJ_FLAG_CLICKABLE);
-		lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-		lv_obj_add_event_cb(row, track_row_event_cb, LV_EVENT_CLICKED,
-							(void *)(uintptr_t)i);
+	for (uint32_t i = 0; i < browse_entry_count; i++) {
+		browse_row_create(list_container,
+						  browse_entries[i].is_dir ? LV_SYMBOL_DIRECTORY
+												   : LV_SYMBOL_AUDIO,
+						  browse_entries[i].name, browse_row_event_cb, i);
+	}
+}
 
-		lv_obj_t *icon = lv_label_create(row);
-		lv_label_set_text(icon, LV_SYMBOL_AUDIO);
-		lv_obj_set_style_text_color(icon, wire_color, 0);
-		lv_obj_align(icon, LV_ALIGN_LEFT_MID, 0, 0);
-		lv_obj_clear_flag(icon, LV_OBJ_FLAG_CLICKABLE);
+/* Relit le dossier courant et reconstruit la liste. Si le dossier n'existe
+ * plus (carte changee...), on revient a la racine. */
+static void browse_refresh(void) {
+	if (!scan_browse_dir() && !browse_at_root()) {
+		strcpy(browse_dir, SD_MUSIC_DIR);
+		scan_browse_dir();
+	}
 
-		lv_obj_t *name_lbl = lv_label_create(row);
-		lv_label_set_text(name_lbl, path_basename(track_paths[i]));
-		lv_label_set_long_mode(name_lbl, LV_LABEL_LONG_DOT);
-		lv_obj_set_width(name_lbl, lv_pct(85));
-		lv_obj_set_style_text_color(name_lbl, wire_color, 0);
-		lv_obj_align(name_lbl, LV_ALIGN_LEFT_MID, 24, 0);
-		lv_obj_clear_flag(name_lbl, LV_OBJ_FLAG_CLICKABLE);
+	if (browse_title_label != NULL) {
+		if (browse_at_root())
+			lv_label_set_text(browse_title_label, "Carte SD");
+		else
+			lv_label_set_text(browse_title_label, path_basename(browse_dir));
+	}
+
+	if (browse_list_container != NULL) {
+		lv_obj_clean(browse_list_container);
+		build_browse_rows(browse_list_container);
+		lv_obj_scroll_to_y(browse_list_container, 0, LV_ANIM_OFF);
 	}
 }
 
 static void browse_open(lv_obj_t *parent_scr) {
 	if (browse_modal_bg != NULL)
 		return;
-
-	scan_sd_music_dir();
 
 	browse_modal_bg = lv_obj_create(parent_scr);
 	lv_obj_remove_style_all(browse_modal_bg);
@@ -442,11 +566,13 @@ static void browse_open(lv_obj_t *parent_scr) {
 	lv_obj_add_flag(browse_panel, LV_OBJ_FLAG_CLICKABLE);
 	lv_obj_clear_flag(browse_panel, LV_OBJ_FLAG_SCROLLABLE);
 
-	lv_obj_t *title = lv_label_create(browse_panel);
-	lv_label_set_text(title, "Choisir un morceau");
-	lv_obj_set_style_text_color(title, wire_color, 0);
-	lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 0);
-	lv_obj_clear_flag(title, LV_OBJ_FLAG_CLICKABLE);
+	/* Titre = nom du dossier courant */
+	browse_title_label = lv_label_create(browse_panel);
+	lv_label_set_long_mode(browse_title_label, LV_LABEL_LONG_DOT);
+	lv_obj_set_width(browse_title_label, 150);
+	lv_obj_set_style_text_color(browse_title_label, wire_color, 0);
+	lv_obj_align(browse_title_label, LV_ALIGN_TOP_LEFT, 0, 0);
+	lv_obj_clear_flag(browse_title_label, LV_OBJ_FLAG_CLICKABLE);
 
 	lv_obj_t *close_btn = wire_icon_btn_create(browse_panel, LV_SYMBOL_CLOSE,
 											   22, browse_close_btn_event_cb);
@@ -461,7 +587,8 @@ static void browse_open(lv_obj_t *parent_scr) {
 	lv_obj_set_scroll_dir(browse_list_container, LV_DIR_VER);
 	lv_obj_set_scrollbar_mode(browse_list_container, LV_SCROLLBAR_MODE_AUTO);
 
-	build_track_list_rows(browse_list_container);
+	/* Rouvre sur le dernier dossier visite */
+	browse_refresh();
 }
 
 static void browse_btn_event_cb(lv_event_t *e) {
@@ -745,9 +872,10 @@ void show_player() {
  *   mp3_player_create(scr);
  *   mp3_player_set_bottom_click_cb(on_bottom_zone_clicked);
  *
- * Au clic sur "Parcourir", la liste des .mp3 trouves dans SD_MUSIC_DIR
- * s'affiche ; selectionner une ligne charge et lance la lecture. Les
- * boutons precedent/suivant naviguent dans la liste deja scannee.
+ * Au clic sur "Parcourir", l'explorateur s'ouvre sur le dernier dossier
+ * visite (SD_MUSIC_DIR au depart) ; un dossier s'ouvre au clic, ".."
+ * remonte, un .mp3 lance la lecture. Les boutons precedent/suivant
+ * naviguent parmi les .mp3 du dossier du morceau lance.
  * Le slider regle le volume (0-100) ; cliquer sur l'icone haut-parleur
  * bascule mute / dernier volume connu.
  *
