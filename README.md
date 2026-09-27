@@ -134,3 +134,20 @@ pilotes tiers (`esp_lcd_touch`, `Vernon_ST7789T`) et les images générées
 ```bash
 git config blame.ignoreRevsFile .git-blame-ignore-revs
 ```
+
+## Licence
+
+Le code de BabyBot est distribué sous licence MIT (voir `LICENSE`), à
+l'exception des fichiers tiers suivants, qui restent sous leur propre licence :
+
+- `main/Touch_Driver/esp_lcd_touch/` et `main/LCD_Driver/Vernon_ST7789T/` :
+  Espressif Systems, Apache-2.0 (voir l'en-tête SPDX de chaque fichier).
+- Les pilotes matériels de `main/` (`Audio_Driver`, `BAT_Driver`,
+  `LCD_Driver`, `LVGL_Driver`, `PWR_Key`, `SD_Card`, `Touch_Driver`,
+  `Wireless`) sont dérivés du programme d'exemple Waveshare
+  ESP32-S3-Touch-LCD-2.8, publié sans licence explicite. Seules les
+  modifications apportées à ces fichiers sont couvertes par la licence MIT.
+
+Dépendances (non incluses dans ce dépôt) : LVGL (MIT), cJSON (MIT),
+esp-idf-pn532 (MIT), esp-audio-player (Apache-2.0), esp-libhelix-mp3
+(Apache-2.0 pour l'enveloppe ; le décodeur Helix est sous RPSL/RCSL).
