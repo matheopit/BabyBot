@@ -34,6 +34,7 @@ une horloge, un réglage de réveil, un lecteur MP3 et un lecteur de tags NFC.
 | `startup.mp3` | son joué au démarrage                 |
 | `wifi.txt`    | identifiants Wi-Fi (JSON, voir ci-dessous) |
 | `*.mp3`       | morceaux pour le lecteur de musique   |
+| `settings/nfc_tags.json` | musique associée à chaque tag NFC (voir ci-dessous) |
 
 `wifi.txt` :
 
@@ -41,6 +42,21 @@ une horloge, un réglage de réveil, un lecteur MP3 et un lecteur de tags NFC.
 {
   "ssid": "NomDuReseau",
   "password": "MotDePasse"
+}
+```
+
+`settings/nfc_tags.json` associe l'UID d'un tag (en hexa, tel qu'affiché
+dans les logs `Tag … inconnu`) soit à un fichier `.mp3`, soit à un répertoire.
+Pour un répertoire, « Jouer » enchaîne tous ses `.mp3` par ordre alphabétique.
+Un chemin relatif part de `/sdcard`. Un tag absent du fichier joue
+`/sdcard/<UID>.mp3` s'il existe.
+
+```json
+{
+  "tags": [
+    { "uid": "04A1B2C3D4E5F6", "path": "/sdcard/histoires/loup.mp3" },
+    { "uid": "8A3F2B11", "path": "comptines" }
+  ]
 }
 ```
 

@@ -7,6 +7,7 @@
 #include "lvgl.h"
 #include "lwip/apps/sntp.h"
 #include "nfc_popup.h"
+#include "nfc_tags.h"
 #include "robot_cute.h"
 #include "wakeup_settings.h"
 #include <errno.h>
@@ -18,7 +19,8 @@ static const char *TAG = "APP_MANAGER";
 
 #define CONFIG_DIR "/sdcard/settings"
 #define CONFIG_FILE_PATH CONFIG_DIR "/config.json"
-// Musique associée à un tag : NFC_MUSIC_DIR/<UID en hexa>.mp3
+// Musique associée à un tag : voir nfc_tags.h, à défaut
+// NFC_MUSIC_DIR/<UID en hexa>.mp3 (ancien format)
 #define NFC_MUSIC_DIR "/sdcard"
 
 // État global
@@ -188,8 +190,8 @@ static void app_manager_post_msg(int msg) {
 	}
 }
 
-// Tag posé (boucle principale) : ouvre la popup si NFC_MUSIC_DIR/<UID>.mp3
-// existe
+// Tag posé (boucle principale) : ouvre la popup si le tag est associé à un
+// mp3 ou à un répertoire (NFC_TAGS_FILE_PATH, sinon NFC_MUSIC_DIR/<UID>.mp3)
 static void app_manager_handle_nfc(void) {
 	nfc_tag_t tag;
 	taskENTER_CRITICAL(&nfc_lock);
@@ -200,17 +202,20 @@ static void app_manager_handle_nfc(void) {
 	for (int i = 0; i < tag.len && i < NFC_UID_MAX_LEN; i++)
 		sprintf(uid_hex + 2 * i, "%02X", tag.uid[i]);
 
-	char path[64];
-	snprintf(path, sizeof(path), "%s/%s.mp3", NFC_MUSIC_DIR, uid_hex);
-
-	struct stat st;
-	if (stat(path, &st) != 0) {
-		ESP_LOGW(TAG, "Tag %s inconnu : copier un mp3 sous %s", uid_hex, path);
-		return;
+	char path[ALARM_SOUND_PATH_LEN];
+	bool is_dir = false;
+	if (!nfc_tags_lookup(uid_hex, path, sizeof(path), &is_dir)) {
+		struct stat st;
+		snprintf(path, sizeof(path), "%s/%s.mp3", NFC_MUSIC_DIR, uid_hex);
+		if (stat(path, &st) != 0) {
+			ESP_LOGW(TAG, "Tag %s inconnu : l'ajouter dans %s", uid_hex,
+					 NFC_TAGS_FILE_PATH);
+			return;
+		}
 	}
 
-	ESP_LOGI(TAG, "Tag %s : %s", uid_hex, path);
-	nfc_popup_open(path);
+	ESP_LOGI(TAG, "Tag %s : %s%s", uid_hex, path, is_dir ? " (playlist)" : "");
+	nfc_popup_open(path, is_dir);
 }
 
 // Messages NFC reçus par la boucle principale (tâche LVGL)

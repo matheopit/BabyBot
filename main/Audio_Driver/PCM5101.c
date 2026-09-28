@@ -16,6 +16,8 @@ static uint32_t s_bytes_per_frame = 4; // 16 bits x 2 canaux
 static volatile uint32_t s_frames_played = 0;
 static volatile bool s_track_finished = false;
 static uint32_t s_duration_sec = 0;
+// Incrémenté à chaque morceau lancé (voir Music_Track_Id)
+static uint32_t s_track_id = 0;
 // static esp_err_t bsp_i2s_write(void *audio_buffer, size_t len, size_t
 // *bytes_written, uint32_t timeout_ms) {                     // I2S Write Init
 //     return i2s_channel_write(i2s_tx_chan, (char *)audio_buffer, len,
@@ -270,6 +272,7 @@ static void Music_track_start(FILE *f) {
 	s_duration_sec = mp3_get_duration(f);
 	s_frames_played = 0;
 	s_track_finished = false;
+	s_track_id++;
 }
 
 void Play_Music_ex(const char *filePath) {
@@ -399,6 +402,13 @@ uint32_t Music_Elapsed(void) {
 		return s_duration_sec;
 	return elapsed;
 }
+
+// true quand le morceau en cours est terminé (ou arrêté)
+bool Music_Finished(void) { return s_track_finished; }
+
+// Identifiant du dernier morceau lancé : permet de savoir si un autre
+// module a lancé un morceau entre-temps
+uint32_t Music_Track_Id(void) { return s_track_id; }
 
 void Volume_adjustment(uint8_t Vol) {
 	if (Vol > Volume_MAX)
