@@ -12,7 +12,7 @@ une horloge, un réglage de réveil, un lecteur MP3 et un lecteur de tags NFC.
 | Tactile         | CST328                | I2C port 1 (SDA 1, SCL 3, INT 4, RST 2) |
 | Audio           | PCM5101 (DAC I2S)     | I2S 1 (BCLK 48, WS 38, DOUT 47)  |
 | Carte SD        | SDMMC 1 bit           | CLK 14, CMD 17, D0 16            |
-| NFC             | PN532                 | I2C port 0 (SDA 11, SCL 10)      |
+| NFC             | PN532                 | UART 0 / HSU 921600 bauds (RX 43, TX 44) |
 | Batterie        | ADC1 canal 7          | GPIO 8                           |
 | Bouton marche   | —                     | entrée GPIO 6, maintien GPIO 7   |
 
@@ -20,7 +20,9 @@ une horloge, un réglage de réveil, un lecteur MP3 et un lecteur de tags NFC.
 
 1. Écran de démarrage + lecture de `startup.mp3`.
 2. Connexion Wi-Fi avec les identifiants de la carte SD, puis synchro de l'heure
-   (SNTP `pool.ntp.org`, fuseau Europe/Paris).
+   (SNTP `pool.ntp.org`, fuseau Europe/Paris). Sans heure au bout de 20 s
+   (pas de Wi-Fi, `wifi.txt` absent…), le robot démarre quand même ; le Wi-Fi
+   continue d'essayer en fond et le réveil ne sonne qu'une fois l'heure connue.
 3. Écran du robot. Un appui n'importe où ouvre le menu circulaire :
    **Réveil**, **Horloge**, **Music**, **BabyBot** (retour au robot).
 4. Lecture NFC en tâche de fond (PN532).
@@ -32,11 +34,11 @@ une horloge, un réglage de réveil, un lecteur MP3 et un lecteur de tags NFC.
 | Fichier       | Rôle                                  |
 |---------------|---------------------------------------|
 | `startup.mp3` | son joué au démarrage                 |
-| `wifi.txt`    | identifiants Wi-Fi (JSON, voir ci-dessous) |
+| `settings/wifi.txt` | identifiants Wi-Fi (JSON, voir ci-dessous) |
 | `*.mp3`       | morceaux pour le lecteur de musique   |
 | `settings/nfc_tags.json` | musique associée à chaque tag NFC (voir ci-dessous) |
 
-`wifi.txt` :
+`settings/wifi.txt` :
 
 ```json
 {
@@ -132,11 +134,11 @@ main/
 ├── BAT_Driver/            mesure de la batterie
 ├── LCD_Driver/            ST7789T
 ├── LVGL_Driver/           intégration LVGL (affichage + tactile)
-├── NFC_Tag/               lecture de tags NTAG via PN532
+├── NFC_Tag/               lecture de tags NTAG via PN532 (UART/HSU)
 ├── PWR_Key/               bouton marche/arrêt
 ├── SD_Card/               carte SD
 ├── Touch_Driver/          CST328 (+ esp_lcd_touch)
-├── Wireless/              Wi-Fi, lecture de wifi.txt
+├── Wireless/              Wi-Fi, lecture de settings/wifi.txt
 └── cute/                  interface : robot, menu, horloge, réveil, musique
 ```
 
