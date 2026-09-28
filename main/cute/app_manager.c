@@ -395,6 +395,22 @@ bool set_wakeup_config(void) {
 	return true;
 }
 
+// true entre le déclenchement du réveil et l'appui sur « Arrêter »
+static bool alarm_ringing = false;
+
+bool app_manager_alarm_ringing(void) { return alarm_ringing; }
+
+// Bouton « Arrêter le réveil » de l'écran robot (tâche LVGL)
+void app_manager_alarm_stop(void) {
+	if (!alarm_ringing)
+		return;
+	ESP_LOGI(TAG, "Réveil arrêté");
+	alarm_ringing = false;
+	Music_stop();
+	app_manager_set_mood(MOOD_NORMAL);
+	robot_alarm_update();
+}
+
 // Déclenche le réveil à l'heure et aux jours configurés (une fois par minute)
 void wakeup(void) {
 	static int last_trigger = -1; // jour de l'année * 1440 + minute du jour
@@ -423,7 +439,11 @@ void wakeup(void) {
 
 	printf("Réveil ! %02d:%02d\n", ti.tm_hour, ti.tm_min);
 	LVGL_Screen_Wake();
+	alarm_ringing = true;
 	app_manager_notify(EVENT_ALARM_TRIGGER, NULL);
+	// Affiche l'écran robot avec le bouton « Arrêter le réveil »
+	pie_dialog_close();
+	app_manager_choose_frame(FRAME_SMILE);
 	if (alarm->sound[0] != '\0') {
 		Play_Music_ex(alarm->sound);
 	}

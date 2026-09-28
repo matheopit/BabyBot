@@ -186,6 +186,51 @@ void robot_update_mood(void) {
 		robot_refresh_eyes();
 }
 
+/* Bouton « Arrêter le réveil » (police sans accents), au milieu de l'écran pendant la sonnerie */
+static lv_obj_t *alarm_btn = NULL;
+
+static void alarm_btn_event_cb(lv_event_t *e) {
+	if (lv_event_get_code(e) != LV_EVENT_CLICKED)
+		return;
+	app_manager_alarm_stop();
+}
+
+static void alarm_btn_create(void) {
+	lv_color_t color = lv_color_hex(COLOR_MAIN);
+
+	alarm_btn = lv_btn_create(robot_screen);
+	lv_obj_remove_style_all(alarm_btn);
+	lv_obj_set_size(alarm_btn, 180, 70);
+	lv_obj_align(alarm_btn, LV_ALIGN_CENTER, 0, 0);
+	lv_obj_set_style_radius(alarm_btn, 8, 0);
+	lv_obj_set_style_border_width(alarm_btn, 2, 0);
+	lv_obj_set_style_border_color(alarm_btn, color, 0);
+	lv_obj_set_style_bg_color(alarm_btn, lv_color_black(), 0);
+	lv_obj_set_style_bg_opa(alarm_btn, LV_OPA_COVER, 0);
+	lv_obj_set_style_bg_color(alarm_btn, color, LV_STATE_PRESSED);
+	lv_obj_set_style_bg_opa(alarm_btn, LV_OPA_40, LV_STATE_PRESSED);
+	lv_obj_add_event_cb(alarm_btn, alarm_btn_event_cb, LV_EVENT_CLICKED,
+						NULL);
+
+	lv_obj_t *lbl = lv_label_create(alarm_btn);
+	lv_label_set_text(lbl, LV_SYMBOL_BELL "\nArreter le reveil");
+	lv_obj_set_style_text_color(lbl, color, 0);
+	lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, 0);
+	lv_obj_center(lbl);
+}
+
+void robot_alarm_update(void) {
+	if (!robot_screen)
+		return;
+	bool ringing = app_manager_alarm_ringing();
+	if (ringing && !alarm_btn) {
+		alarm_btn_create();
+	} else if (!ringing && alarm_btn) {
+		lv_obj_del(alarm_btn);
+		alarm_btn = NULL;
+	}
+}
+
 void draw_robot() {
 
 	if (!robot_screen) {
@@ -211,5 +256,7 @@ void draw_robot() {
 	} else {
 		robot_refresh_eyes();
 	}
+	/* Créé après la zone de clic pour être au-dessus */
+	robot_alarm_update();
 	lv_scr_load(robot_screen);
 }

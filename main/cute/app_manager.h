@@ -60,3 +60,5 @@ bool app_manager_time_is_synced(void);
 alarm_t *getAlarm();
 bool set_wakeup_config(void);
 void wakeup(void);
+bool app_manager_alarm_ringing(void);
+void app_manager_alarm_stop(void);

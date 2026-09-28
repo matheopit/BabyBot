@@ -4,6 +4,7 @@
 #include <lvgl.h>
 
 void pie_dialog_open(lv_obj_t *parent_scr);
+void pie_dialog_close(void);
 void create_full_click_zone(lv_obj_t *parent);
 void clock_create();
 void babybot_splash_create();
