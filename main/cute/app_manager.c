@@ -26,6 +26,7 @@ static const char *TAG = "APP_MANAGER";
 // État global
 static mood_t g_mood = MOOD_NORMAL;
 static alarm_t g_alarm = {7, 15, 0x1F, false, "", false};
+static uint8_t g_volume = VOLUME_DEFAULT; // 0-100, appliqué au démarrage
 
 static void app_manager_parse_json(const char *json);
 static void app_manager_load_config(void);
@@ -95,6 +96,22 @@ void app_manager_set_alarm(int hour, int minute, int days, bool enabled) {
 }
 
 // ===============================
+// VOLUME
+// ===============================
+uint8_t app_manager_get_volume(void) { return g_volume; }
+
+// Mémorise le volume et, si save, réécrit config.json (tâche LVGL)
+void app_manager_set_volume(uint8_t volume, bool save) {
+	if (volume > 100)
+		volume = 100;
+	if (volume == g_volume)
+		return;
+	g_volume = volume;
+	if (save)
+		set_wakeup_config();
+}
+
+// ===============================
 // JSON PARSER
 // ===============================
 static void app_manager_parse_json(const char *json) {
@@ -137,6 +154,13 @@ static void app_manager_parse_json(const char *json) {
 		} else {
 			ESP_LOGE(TAG, "Alarme invalide");
 		}
+	}
+
+	// Volume (0-100)
+	cJSON *volume = cJSON_GetObjectItem(root, "volume");
+	if (cJSON_IsNumber(volume)) {
+		int v = volume->valueint;
+		g_volume = v < 0 ? 0 : (v > 100 ? 100 : v);
 	}
 
 	cJSON_Delete(root);
@@ -366,6 +390,7 @@ bool set_wakeup_config(void) {
 	cJSON_AddNumberToObject(alarm, "days", g_alarm.days & 0x7F); // bit 0 = lundi
 	cJSON_AddBoolToObject(alarm, "enabled", g_alarm.enabled);
 	cJSON_AddStringToObject(alarm, "sound", g_alarm.sound);
+	cJSON_AddNumberToObject(root, "volume", g_volume);
 
 	char *json = cJSON_Print(root);
 	cJSON_Delete(root);
@@ -391,7 +416,7 @@ bool set_wakeup_config(void) {
 		return false;
 	}
 
-	ESP_LOGI(TAG, "Réveil sauvegardé dans %s", CONFIG_FILE_PATH);
+	ESP_LOGI(TAG, "Réglages sauvegardés dans %s", CONFIG_FILE_PATH);
 	return true;
 }
 
