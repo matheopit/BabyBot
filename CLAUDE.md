@@ -27,9 +27,9 @@ idf.py -p /dev/ttyACM0 flash monitor
 
 **Tasks and threading** (`main/main.c`):
 - `app_main` initializes SD → LCD → Audio → LVGL → `app_manager_init()` (loads `/sdcard/settings/config.json`), shows the splash screen and plays `startup.mp3`. It then loops forever. Each pass it drains `app_msg_queue`, calls `wakeup()` (the alarm check) and calls `lv_timer_handler()`. **This loop is the only LVGL task, and there is no LVGL mutex.** Do not call `lv_*` from any other task. Send a message on `app_msg_queue` instead.
-- `Driver_Loop` (core 0) runs `Wireless_Init()`: it reads Wi-Fi credentials from `/sdcard/wifi.txt` (JSON), then on connection calls `app_manager_setup_time()` (SNTP, Europe/Paris TZ), which posts `MSG_TIME_READY`. It then polls the battery and power key every 100 ms.
-- On `MSG_TIME_READY`, the main loop switches to the robot screen, starts `nfc_task` (core 1) and stops Wi-Fi. Wi-Fi is used only for the initial time sync.
-- `nfc_task` calls `app_manager_notify(EVENT_NFC_TAG / EVENT_NFC_TAG_REMOVED)` directly from its own task. When a tag is placed, the app plays `/sdcard/<UID hex>.mp3` if that file exists. When the tag is removed, the music stops.
+- `Driver_Loop` (core 0) runs `Wireless_Init()`: it reads Wi-Fi credentials from `/sdcard/settings/wifi.txt` (JSON), then on connection calls `app_manager_setup_time()` (SNTP, Europe/Paris TZ), which posts `MSG_TIME_READY`. It then polls the battery and power key every 100 ms.
+- On `MSG_TIME_READY`, or after `TIME_SYNC_TIMEOUT_MS` (20 s) without it, the main loop calls `app_start()`: it switches to the robot screen and starts `nfc_task` (core 1), once. Wi-Fi is stopped once the time is synced; it is used only for the initial time sync.
+- `nfc_task` talks to the PN532 over UART0 in HSU mode (921600 baud, RX 43, TX 44) and puts it in power-down between polls. It calls `app_manager_notify(EVENT_NFC_TAG / EVENT_NFC_TAG_REMOVED)` from its own task; that only posts `MSG_NFC_TAG*` on `app_msg_queue`. The main loop then looks the UID up in `/sdcard/settings/nfc_tags.json` (fallback `/sdcard/<UID hex>.mp3`) and opens the NFC popup (`nfc_popup.c`).
 
 **app_manager** (`cute/app_manager.[ch]`) is the central hub:
 - Global state: mood and `alarm_t` (the `days` bitmask uses bit 0 = Monday; `in_settings` suppresses the alarm while it is being edited).

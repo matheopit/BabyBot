@@ -9,6 +9,10 @@
 #include <time.h>
 QueueHandle_t app_msg_queue;
 
+// Délai max d'attente de la synchro de l'heure avant d'afficher le robot
+// quand même (Wi-Fi absent, wifi.txt manquant, serveur NTP injoignable…)
+#define TIME_SYNC_TIMEOUT_MS 20000
+
 void Driver_Loop(void *parameter) {
 	Wireless_Init();
 	while (1) {
@@ -26,6 +30,16 @@ static void nfc_task(void *parameter) {
 			nfc_loop();
 		}
 	}
+}
+
+// Quitte le splash : écran robot + démarrage de la lecture NFC (une seule fois)
+static bool app_started = false;
+static void app_start(void) {
+	if (app_started)
+		return;
+	app_started = true;
+	app_manager_choose_frame(FRAME_SMILE);
+	xTaskCreatePinnedToCore(nfc_task, "NFC task", 4096, NULL, 4, NULL, 1);
 }
 
 void Driver_Init(void) {
@@ -53,20 +67,15 @@ void app_main(void) {
 	Play_Music("/sdcard", "startup.mp3");
 	Driver_Init();
 
+	const TickType_t boot_tick = xTaskGetTickCount();
+
 	while (1) {
 
 		int msg;
 		if (xQueueReceive(app_msg_queue, &msg, 0)) {
 			if (msg == MSG_TIME_READY) {
-				static bool time_ready_done = false;
-				if (!time_ready_done) {
-					time_ready_done = true;
-					printf("Heure OK → changement de frame\n");
-					app_manager_choose_frame(FRAME_SMILE);
-
-					xTaskCreatePinnedToCore(nfc_task, "NFC task", 4096, NULL, 4,
-											NULL, 1);
-				}
+				printf("Heure OK → changement de frame\n");
+				app_start();
 				// Le WiFi ne sert qu'à la synchro de l'heure au démarrage
 				if (app_manager_time_is_synced()) {
 					WIFI_Stop();
@@ -74,6 +83,15 @@ void app_main(void) {
 			} else {
 				app_manager_handle_msg(msg);
 			}
+		}
+
+		// Pas d'heure au bout du délai : on démarre quand même, sans bloquer
+		// l'enfant sur le splash. Le Wi-Fi continue d'essayer en fond.
+		if (!app_started && xTaskGetTickCount() - boot_tick >
+								pdMS_TO_TICKS(TIME_SYNC_TIMEOUT_MS)) {
+			printf("Heure non synchronisée après %d s, démarrage quand même\n",
+				   TIME_SYNC_TIMEOUT_MS / 1000);
+			app_start();
 		}
 
 		wakeup();
