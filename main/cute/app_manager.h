@@ -10,6 +10,7 @@
 #define MSG_NFC_TAG 2		 // tag posé (voir app_manager_handle_msg)
 #define MSG_NFC_TAG_REMOVED 3 // tag retiré
 #define ALARM_SOUND_PATH_LEN 128
+#define VOLUME_DEFAULT 10 // volume sans config.json (0-100)
 extern QueueHandle_t app_msg_queue;
 
 typedef enum { MOOD_NORMAL, MOOD_ANGRY, MOOD_HAPPY, MOOD_TIRED, MOOD_SAD } mood_t;
@@ -58,7 +59,10 @@ void app_manager_choose_frame(frame_select_t frame);
 void app_manager_setup_time();
 bool app_manager_time_is_synced(void);
 alarm_t *getAlarm();
+// Écrit config.json : réveil + volume
 bool set_wakeup_config(void);
+uint8_t app_manager_get_volume(void);
+void app_manager_set_volume(uint8_t volume, bool save);
 void wakeup(void);
 bool app_manager_alarm_ringing(void);
 void app_manager_alarm_stop(void);

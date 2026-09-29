@@ -34,6 +34,7 @@ une horloge, un réglage de réveil, un lecteur MP3 et un lecteur de tags NFC.
 | `startup.mp3` | son joué au démarrage                 |
 | `wifi.txt`    | identifiants Wi-Fi (JSON, voir ci-dessous) |
 | `*.mp3`       | morceaux pour le lecteur de musique   |
+| `settings/config.json` | réglages sauvegardés par BabyBot : réveil et volume (créé automatiquement) |
 | `settings/nfc_tags.json` | musique associée à chaque tag NFC (voir ci-dessous) |
 
 `wifi.txt` :

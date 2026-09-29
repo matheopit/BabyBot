@@ -39,6 +39,7 @@
  *     systeme de fichiers ne passe pas par le noyau Linux.
  */
 
+#include "app_manager.h"
 #include "draw_function.h"
 #include "lvgl.h"
 #include "pie_icons.h"
@@ -622,6 +623,14 @@ static void volume_slider_event_cb(lv_event_t *e) {
 		volume_before_mute = v;
 }
 
+/* Slider relache : sauvegarde du volume dans config.json (une seule
+ * ecriture SD par reglage, pas a chaque pas du glissement) */
+static void volume_slider_released_cb(lv_event_t *e) {
+	if (lv_event_get_code(e) != LV_EVENT_RELEASED)
+		return;
+	app_manager_set_volume((uint8_t)lv_slider_get_value(volume_slider), true);
+}
+
 /* Clic sur l'icone haut-parleur : bascule mute / dernier volume connu */
 static void volume_icon_event_cb(lv_event_t *e) {
 	if (lv_event_get_code(e) != LV_EVENT_CLICKED)
@@ -769,6 +778,8 @@ void mp3_player_create(lv_obj_t *scr) {
 							 LV_PART_KNOB); /* taille de la poignee */
 	lv_obj_add_event_cb(volume_slider, volume_slider_event_cb,
 						LV_EVENT_VALUE_CHANGED, NULL);
+	lv_obj_add_event_cb(volume_slider, volume_slider_released_cb,
+						LV_EVENT_RELEASED, NULL);
 
 	uint8_t initial_vol = audio_get_volume();
 	lv_slider_set_value(volume_slider, initial_vol, LV_ANIM_OFF);

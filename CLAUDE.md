@@ -34,7 +34,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 **app_manager** (`cute/app_manager.[ch]`) is the central hub:
 - Global state: mood and `alarm_t` (the `days` bitmask uses bit 0 = Monday; `in_settings` suppresses the alarm while it is being edited).
 - An event dispatcher (`app_manager_notify`).
-- Config persistence to `/sdcard/settings/config.json` via cJSON (`set_wakeup_config` writes it).
+- Config persistence to `/sdcard/settings/config.json` via cJSON: the alarm (`alarm` object) and the volume (root `volume`, 0-100, default `VOLUME_DEFAULT`). `set_wakeup_config` rewrites the whole file. The volume is applied at boot and saved when the music player's slider is released (`app_manager_set_volume`).
 - Screen navigation via `app_manager_choose_frame(frame_select_t)`.
 
 **Screens ("frames")**: each frame has its own `*_create()` function. That function builds a new `lv_obj_t` screen and calls `lv_scr_load` on it:

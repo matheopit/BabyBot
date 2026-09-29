@@ -50,7 +50,7 @@ void app_main(void) {
 	lv_refr_now(NULL);
 	vTaskDelay(pdMS_TO_TICKS(20)); // fin du dernier transfert DMA
 	LCD_Display_On();
-	Volume_adjustment(10);
+	Volume_adjustment(app_manager_get_volume()); // lu dans config.json
 	Play_Music("/sdcard", "startup.mp3");
 	Driver_Init();
 
