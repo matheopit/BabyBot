@@ -1,13 +1,14 @@
 #include "app_manager.h"
 #include "LVGL_Driver.h"
 #include "PCM5101.h"
+#include "Wireless.h"
 #include "cJSON.h"
 #include "draw_function.h"
 #include "esp_log.h"
 #include "lvgl.h"
-#include "esp_sntp.h"
 #include "nfc_popup.h"
 #include "nfc_tags.h"
+#include "ntag_read.h"
 #include "robot_cute.h"
 #include "wakeup_settings.h"
 #include <errno.h>
@@ -243,8 +244,35 @@ static void app_manager_handle_nfc(void) {
 }
 
 // Messages NFC reçus par la boucle principale (tâche LVGL)
+static void nfc_task(void *parameter) {
+	while (1) {
+		init_nfc();
+		while (1) {
+			nfc_loop();
+		}
+	}
+}
+
+// Quitte le splash : écran robot + démarrage de la lecture NFC (une seule fois)
+static bool app_started = false;
+void app_manager_start(void) {
+	if (app_started)
+		return;
+	app_started = true;
+	app_manager_choose_frame(FRAME_SMILE);
+	xTaskCreatePinnedToCore(nfc_task, "NFC task", 4096, NULL, 4, NULL, 1);
+}
+
+bool app_manager_is_started(void) { return app_started; }
+
 void app_manager_handle_msg(int msg) {
 	switch (msg) {
+	case MSG_TIME_READY:
+		ESP_LOGI(TAG, "Heure OK → changement de frame");
+		app_manager_start();
+		// Le WiFi ne sert qu'à la synchro de l'heure au démarrage
+		WIFI_Stop();
+		break;
 	case MSG_NFC_TAG:
 		app_manager_handle_nfc();
 		break;
@@ -310,56 +338,6 @@ void app_manager_choose_frame(frame_select_t frame) {
 		break;
 	}
 }
-
-bool app_manager_time_is_synced(void) {
-	time_t now;
-	struct tm timeinfo = {0};
-
-	time(&now);
-	localtime_r(&now, &timeinfo);
-
-	return (timeinfo.tm_year > 100); // année > 2000 → OK
-}
-
-static void apply_timezone_paris(void) {
-	setenv("TZ", "CET-1CEST,M3.5.0/2,M10.5.0/3", 1);
-	tzset();
-}
-
-// Appelé par SNTP (tâche lwIP) quand l'heure est réellement obtenue, même
-// longtemps après le démarrage : on arrête SNTP et on prévient la boucle
-// principale, qui coupe le Wi-Fi.
-static void on_time_sync(struct timeval *tv) {
-	esp_sntp_stop(); // heure obtenue, plus besoin d'interroger le serveur
-
-	time_t now = tv->tv_sec;
-	struct tm ti;
-	localtime_r(&now, &ti);
-	printf("SNTP sync ! Heure Paris: %02d:%02d:%02d\n", ti.tm_hour, ti.tm_min,
-		   ti.tm_sec);
-
-	int msg = MSG_TIME_READY;
-	xQueueSend(app_msg_queue, &msg, 0);
-}
-
-// Lance la synchro NTP sans bloquer : MSG_TIME_READY est posté par
-// on_time_sync(). Appelé à chaque obtention d'IP, SNTP n'est lancé qu'une fois.
-void app_manager_setup_time() {
-	static bool started = false;
-	if (started)
-		return;
-	started = true;
-
-	apply_timezone_paris();
-	esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
-	esp_sntp_setservername(0, "pool.ntp.org");
-	sntp_set_time_sync_notification_cb(on_time_sync);
-	esp_sntp_init();
-	printf("Synchronisation NTP lancée\n");
-}
-
-// Abandon de la synchro (heure jamais obtenue) : SNTP arrêté
-void app_manager_stop_time_sync(void) { esp_sntp_stop(); }
 
 alarm_t *getAlarm() { return &g_alarm; }
 

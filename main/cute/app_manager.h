@@ -51,14 +51,13 @@ typedef enum {
 void app_manager_init(void);
 void app_manager_notify(app_event_t event, void *data);
 void app_manager_handle_msg(int msg);
+void app_manager_start(void);
+bool app_manager_is_started(void);
 void app_manager_set_mood(mood_t mood);
 mood_t app_manager_get_mood(void);
 mood_t app_manager_get_mood();
 void app_manager_set_alarm(int hour, int minute, int days, bool enabled);
 void app_manager_choose_frame(frame_select_t frame);
-void app_manager_setup_time();
-bool app_manager_time_is_synced(void);
-void app_manager_stop_time_sync(void);
 alarm_t *getAlarm();
 // Écrit config.json : réveil + volume
 bool set_wakeup_config(void);

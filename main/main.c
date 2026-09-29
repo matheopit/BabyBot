@@ -5,7 +5,7 @@
 #include "ST7789.h"
 #include "Wireless.h"
 #include "app_manager.h"
-#include "ntag_read.h"
+#include "time_sync.h"
 #include <time.h>
 QueueHandle_t app_msg_queue;
 
@@ -24,25 +24,6 @@ void Driver_Loop(void *parameter) {
 		vTaskDelay(pdMS_TO_TICKS(100));
 	}
 	vTaskDelete(NULL);
-}
-
-static void nfc_task(void *parameter) {
-	while (1) {
-		init_nfc();
-		while (1) {
-			nfc_loop();
-		}
-	}
-}
-
-// Quitte le splash : écran robot + démarrage de la lecture NFC (une seule fois)
-static bool app_started = false;
-static void app_start(void) {
-	if (app_started)
-		return;
-	app_started = true;
-	app_manager_choose_frame(FRAME_SMILE);
-	xTaskCreatePinnedToCore(nfc_task, "NFC task", 4096, NULL, 4, NULL, 1);
 }
 
 void Driver_Init(void) {
@@ -76,32 +57,25 @@ void app_main(void) {
 
 		int msg;
 		if (xQueueReceive(app_msg_queue, &msg, 0)) {
-			if (msg == MSG_TIME_READY) {
-				printf("Heure OK → changement de frame\n");
-				app_start();
-				// Le WiFi ne sert qu'à la synchro de l'heure au démarrage
-				WIFI_Stop();
-			} else {
-				app_manager_handle_msg(msg);
-			}
+			app_manager_handle_msg(msg);
 		}
 
 		// Pas d'heure au bout du délai : on démarre quand même, sans bloquer
 		// l'enfant sur le splash. Le Wi-Fi continue d'essayer en fond.
-		if (!app_started && xTaskGetTickCount() - boot_tick >
+		if (!app_manager_is_started() && xTaskGetTickCount() - boot_tick >
 								pdMS_TO_TICKS(TIME_SYNC_TIMEOUT_MS)) {
 			printf("Heure non synchronisée après %d s, démarrage quand même\n",
 				   TIME_SYNC_TIMEOUT_MS / 1000);
-			app_start();
+			app_manager_start();
 		}
 
 		static bool wifi_given_up = false;
-		if (!wifi_given_up && !app_manager_time_is_synced() &&
+		if (!wifi_given_up && !time_sync_is_synced() &&
 			xTaskGetTickCount() - boot_tick > pdMS_TO_TICKS(WIFI_GIVE_UP_MS)) {
 			wifi_given_up = true;
 			printf("Heure toujours absente après %d min, arrêt du Wi-Fi\n",
 				   WIFI_GIVE_UP_MS / 60000);
-			app_manager_stop_time_sync();
+			time_sync_stop();
 			WIFI_Stop();
 		}
 
