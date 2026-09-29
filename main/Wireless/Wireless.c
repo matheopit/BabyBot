@@ -71,8 +71,11 @@ void WIFI_Init(void *arg) {
 
 	vTaskDelete(NULL);
 }
-// Coupe le WiFi pour économiser la batterie (heure déjà synchronisée)
+// Coupe le WiFi pour économiser la batterie (heure obtenue ou abandonnée)
+// (sans effet si déjà arrêté)
 void WIFI_Stop(void) {
+	if (wifi_stopping)
+		return;
 	wifi_stopping = true;
 	esp_wifi_disconnect();
 	esp_wifi_stop();

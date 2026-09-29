@@ -23,6 +23,8 @@ une horloge, un réglage de réveil, un lecteur MP3 et un lecteur de tags NFC.
    (SNTP `pool.ntp.org`, fuseau Europe/Paris). Sans heure au bout de 20 s
    (pas de Wi-Fi, `wifi.txt` absent…), le robot démarre quand même ; le Wi-Fi
    continue d'essayer en fond et le réveil ne sonne qu'une fois l'heure connue.
+   Le Wi-Fi est coupé dès que l'heure est obtenue, ou au bout de 5 min sans
+   heure pour préserver la batterie.
 3. Écran du robot. Un appui n'importe où ouvre le menu circulaire :
    **Réveil**, **Horloge**, **Music**, **BabyBot** (retour au robot).
 4. Lecture NFC en tâche de fond (PN532).
