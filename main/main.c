@@ -12,6 +12,9 @@ QueueHandle_t app_msg_queue;
 // Délai max d'attente de la synchro de l'heure avant d'afficher le robot
 // quand même (Wi-Fi absent, wifi.txt manquant, serveur NTP injoignable…)
 #define TIME_SYNC_TIMEOUT_MS 20000
+// Délai après lequel on renonce à l'heure et on coupe le Wi-Fi pour ne pas
+// vider la batterie (le réveil ne fonctionnera pas sans heure)
+#define WIFI_GIVE_UP_MS (5 * 60 * 1000)
 
 void Driver_Loop(void *parameter) {
 	Wireless_Init();
@@ -77,9 +80,7 @@ void app_main(void) {
 				printf("Heure OK → changement de frame\n");
 				app_start();
 				// Le WiFi ne sert qu'à la synchro de l'heure au démarrage
-				if (app_manager_time_is_synced()) {
-					WIFI_Stop();
-				}
+				WIFI_Stop();
 			} else {
 				app_manager_handle_msg(msg);
 			}
@@ -92,6 +93,16 @@ void app_main(void) {
 			printf("Heure non synchronisée après %d s, démarrage quand même\n",
 				   TIME_SYNC_TIMEOUT_MS / 1000);
 			app_start();
+		}
+
+		static bool wifi_given_up = false;
+		if (!wifi_given_up && !app_manager_time_is_synced() &&
+			xTaskGetTickCount() - boot_tick > pdMS_TO_TICKS(WIFI_GIVE_UP_MS)) {
+			wifi_given_up = true;
+			printf("Heure toujours absente après %d min, arrêt du Wi-Fi\n",
+				   WIFI_GIVE_UP_MS / 60000);
+			app_manager_stop_time_sync();
+			WIFI_Stop();
 		}
 
 		wakeup();

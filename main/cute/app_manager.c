@@ -5,7 +5,7 @@
 #include "draw_function.h"
 #include "esp_log.h"
 #include "lvgl.h"
-#include "lwip/apps/sntp.h"
+#include "esp_sntp.h"
 #include "nfc_popup.h"
 #include "nfc_tags.h"
 #include "robot_cute.h"
@@ -324,48 +324,42 @@ bool app_manager_time_is_synced(void) {
 static void apply_timezone_paris(void) {
 	setenv("TZ", "CET-1CEST,M3.5.0/2,M10.5.0/3", 1);
 	tzset();
-	vTaskDelay(pdMS_TO_TICKS(200));
 }
 
-static void wait_for_sntp_sync(void) {
-	int retry = 0;
-	const int max_retry = 10;
+// Appelé par SNTP (tâche lwIP) quand l'heure est réellement obtenue, même
+// longtemps après le démarrage : on arrête SNTP et on prévient la boucle
+// principale, qui coupe le Wi-Fi.
+static void on_time_sync(struct timeval *tv) {
+	esp_sntp_stop(); // heure obtenue, plus besoin d'interroger le serveur
 
-	while (!app_manager_time_is_synced() && retry < max_retry) {
-		printf("SNTP non sync...\n");
-		vTaskDelay(pdMS_TO_TICKS(500));
-		retry++;
-	}
+	time_t now = tv->tv_sec;
+	struct tm ti;
+	localtime_r(&now, &ti);
+	printf("SNTP sync ! Heure Paris: %02d:%02d:%02d\n", ti.tm_hour, ti.tm_min,
+		   ti.tm_sec);
 
-	if (app_manager_time_is_synced()) {
-		printf("SNTP sync !\n");
-		apply_timezone_paris();
-
-		time_t now;
-		struct tm ti;
-		time(&now);
-		localtime_r(&now, &ti);
-
-		printf("Heure Paris: %02d:%02d:%02d\n", ti.tm_hour, ti.tm_min,
-			   ti.tm_sec);
-	} else {
-		printf("SNTP échec de synchro\n");
-	}
-}
-
-void app_manager_setup_time() {
-	/* --- Lancer SNTP --- */
-	sntp_setoperatingmode(SNTP_OPMODE_POLL);
-	sntp_setservername(0, "pool.ntp.org");
-	sntp_init();
-	printf("Synchronisation NTP lancée\n");
-	wait_for_sntp_sync();
-	if (app_manager_time_is_synced()) {
-		sntp_stop(); // heure obtenue, plus besoin d'interroger le serveur
-	}
 	int msg = MSG_TIME_READY;
 	xQueueSend(app_msg_queue, &msg, 0);
 }
+
+// Lance la synchro NTP sans bloquer : MSG_TIME_READY est posté par
+// on_time_sync(). Appelé à chaque obtention d'IP, SNTP n'est lancé qu'une fois.
+void app_manager_setup_time() {
+	static bool started = false;
+	if (started)
+		return;
+	started = true;
+
+	apply_timezone_paris();
+	esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
+	esp_sntp_setservername(0, "pool.ntp.org");
+	sntp_set_time_sync_notification_cb(on_time_sync);
+	esp_sntp_init();
+	printf("Synchronisation NTP lancée\n");
+}
+
+// Abandon de la synchro (heure jamais obtenue) : SNTP arrêté
+void app_manager_stop_time_sync(void) { esp_sntp_stop(); }
 
 alarm_t *getAlarm() { return &g_alarm; }
 

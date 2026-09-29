@@ -58,6 +58,7 @@ void app_manager_set_alarm(int hour, int minute, int days, bool enabled);
 void app_manager_choose_frame(frame_select_t frame);
 void app_manager_setup_time();
 bool app_manager_time_is_synced(void);
+void app_manager_stop_time_sync(void);
 alarm_t *getAlarm();
 // Écrit config.json : réveil + volume
 bool set_wakeup_config(void);
