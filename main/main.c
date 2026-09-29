@@ -32,8 +32,7 @@ void Driver_Init(void) {
 	PWR_Init();
 	BAT_Init();
 	Flash_Searching();
-	xTaskCreatePinnedToCore(Driver_Loop, "Other Driver task", 4096, NULL, 3,
-							NULL, 0);
+	xTaskCreatePinnedToCore(Driver_Loop, "Driver task", 4096, NULL, 3, NULL, 0);
 }
 
 void app_main(void) {
@@ -64,9 +63,9 @@ void app_main(void) {
 					time_ready_done = true;
 					printf("Heure OK → changement de frame\n");
 					app_manager_choose_frame(FRAME_SMILE);
-					
-					xTaskCreatePinnedToCore(nfc_task, "Other Driver task", 4096,
-											NULL, 4, NULL, 1);
+
+					xTaskCreatePinnedToCore(nfc_task, "NFC task", 4096, NULL, 4,
+											NULL, 1);
 				}
 				// Le WiFi ne sert qu'à la synchro de l'heure au démarrage
 				if (app_manager_time_is_synced()) {
