@@ -8,8 +8,8 @@
 void audio_play_file(const char *fileName) { Play_Music_ex(fileName); }
 /* met en pause la lecture en cours */
 void audio_pause(void) { Music_pause(); }
-/* reprend apres une pause */
-void audio_resume(void) { Music_resume(); }
+/* reprend apres une pause, false s'il n'y avait rien a reprendre */
+bool audio_resume(void) { return Music_resume(); }
 /* arrete completement la lecture */
 void audio_stop(void) { Music_stop(); }
 /* position de lecture actuelle, en secondes */

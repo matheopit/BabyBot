@@ -290,15 +290,13 @@ void Play_Music_ex(const char *filePath) {
 		fclose(Music_File);
 		return;
 	}
+	// À partir d'ici le fichier appartient au lecteur, qui le fermera
 	if (xQueueReceive(event_queue, &event, pdMS_TO_TICKS(100)) != pdPASS) {
 		ESP_LOGE(TAG, "Failed to receive playing event");
-		fclose(Music_File);
 		return;
 	}
 	if (audio_player_get_state() != AUDIO_PLAYER_STATE_PLAYING) {
 		ESP_LOGE(TAG, "Expected state to be PLAYING");
-		fclose(Music_File);
-		return;
 	}
 }
 
@@ -325,38 +323,37 @@ void Play_Music(const char *directory, const char *fileName) {
 		fclose(Music_File);
 		return;
 	}
+	// À partir d'ici le fichier appartient au lecteur, qui le fermera
 	if (xQueueReceive(event_queue, &event, pdMS_TO_TICKS(100)) != pdPASS) {
 		ESP_LOGE(TAG, "Failed to receive playing event");
-		fclose(Music_File);
 		return;
 	}
 	if (audio_player_get_state() != AUDIO_PLAYER_STATE_PLAYING) {
 		ESP_LOGE(TAG, "Expected state to be PLAYING");
-		fclose(Music_File);
-		return;
 	}
 }
 
-void Music_resume(void) {
-	if (audio_player_get_state() != AUDIO_PLAYER_STATE_PLAYING) {
-		expected_event = AUDIO_PLAYER_CALLBACK_EVENT_PLAYING;
-		esp_err_t ret = audio_player_resume();
-		if (ret != ESP_OK) {
-			ESP_LOGE(TAG, "Failed to resume audio: %s", esp_err_to_name(ret));
-			fclose(Music_File);
-			return;
-		}
-		if (xQueueReceive(event_queue, &event, pdMS_TO_TICKS(100)) != pdPASS) {
-			ESP_LOGE(TAG, "Failed to receive playing event after resume");
-			fclose(Music_File);
-			return;
-		}
-		if (audio_player_get_state() != AUDIO_PLAYER_STATE_PLAYING) {
-			ESP_LOGE(TAG, "Expected state to be RESUME");
-			fclose(Music_File);
-			return;
-		}
+// Reprend la lecture en pause. Renvoie false s'il n'y a rien à reprendre
+// (morceau terminé ou arrêté entre-temps) : l'appelant doit relancer le
+// morceau. Le fichier appartient au lecteur, qui le ferme lui-même : on ne
+// fait jamais de fclose ici.
+bool Music_resume(void) {
+	audio_player_state_t state = audio_player_get_state();
+	if (state == AUDIO_PLAYER_STATE_PLAYING)
+		return true;
+	if (state != AUDIO_PLAYER_STATE_PAUSE)
+		return false;
+
+	expected_event = AUDIO_PLAYER_CALLBACK_EVENT_PLAYING;
+	esp_err_t ret = audio_player_resume();
+	if (ret != ESP_OK) {
+		ESP_LOGE(TAG, "Failed to resume audio: %s", esp_err_to_name(ret));
+		return false;
 	}
+	if (xQueueReceive(event_queue, &event, pdMS_TO_TICKS(100)) != pdPASS) {
+		ESP_LOGE(TAG, "Failed to receive playing event after resume");
+	}
+	return audio_player_get_state() == AUDIO_PLAYER_STATE_PLAYING;
 }
 void Music_pause(void) {
 	if (audio_player_get_state() == AUDIO_PLAYER_STATE_PLAYING) {
@@ -364,18 +361,14 @@ void Music_pause(void) {
 		esp_err_t ret = audio_player_pause();
 		if (ret != ESP_OK) {
 			ESP_LOGE(TAG, "Failed to pause audio: %s", esp_err_to_name(ret));
-			fclose(Music_File);
 			return;
 		}
 		if (xQueueReceive(event_queue, &event, pdMS_TO_TICKS(100)) != pdPASS) {
 			ESP_LOGE(TAG, "Failed to receive pause event");
-			fclose(Music_File);
 			return;
 		}
 		if (audio_player_get_state() != AUDIO_PLAYER_STATE_PAUSE) {
 			ESP_LOGE(TAG, "Expected state to be PAUSE");
-			fclose(Music_File);
-			return;
 		}
 	}
 }

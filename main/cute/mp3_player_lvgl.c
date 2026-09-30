@@ -92,7 +92,8 @@
 extern void audio_play_file(
 	const char *path);			/* charge et demarre la lecture d'un fichier */
 extern void audio_pause(void);	/* met en pause la lecture en cours */
-extern void audio_resume(void); /* reprend apres une pause */
+extern bool audio_resume(void); /* reprend apres une pause, false s'il n'y
+								   avait rien a reprendre */
 extern void audio_stop(void);	/* arrete completement la lecture */
 extern uint32_t
 audio_get_position_sec(void); /* position de lecture actuelle, en secondes */
@@ -262,8 +263,12 @@ static void play_pause_btn_event_cb(lv_event_t *e) {
 	if (is_playing) {
 		audio_pause();
 		is_playing = false;
+	} else if (!audio_resume()) {
+		/* Plus rien en pause (morceau termine, ou un autre son joue
+		 * entre-temps) : on relance le morceau courant */
+		load_and_play_track(current_track_idx);
+		return;
 	} else {
-		audio_resume();
 		is_playing = true;
 	}
 	update_play_pause_icon();
