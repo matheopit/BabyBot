@@ -63,11 +63,38 @@ void LVGL_Screen_Sleep_Loop(void) {
 	}
 }
 
+// Anti-rebond du toucher, en nombre de lectures consécutives (une lecture
+// toutes les CONFIG_LV_INDEV_DEF_READ_PERIOD ms, soit 30 ms) :
+// - un appui n'est pris en compte qu'après TOUCH_PRESS_CONFIRM lectures
+//   « appuyé » (filtre les touches fantômes et les frôlements)
+// - un relâché n'est pris en compte qu'après TOUCH_RELEASE_CONFIRM lectures
+//   « relâché » (un échantillon perdu en plein appui ne crée pas de clic)
+#define TOUCH_PRESS_CONFIRM 3
+#define TOUCH_RELEASE_CONFIRM 2
+
+static bool touch_debounce(bool raw_pressed) {
+	static bool stable = false;
+	static uint8_t count = 0;
+
+	if (raw_pressed == stable) {
+		count = 0;
+		return stable;
+	}
+	if (++count >= (raw_pressed ? TOUCH_PRESS_CONFIRM : TOUCH_RELEASE_CONFIRM)) {
+		stable = raw_pressed;
+		count = 0;
+	}
+	return stable;
+}
+
 /*Read the touchpad*/
 static void lvgl_touchpad_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
 	uint16_t touchpad_x[5] = {0};
 	uint16_t touchpad_y[5] = {0};
 	uint8_t touchpad_cnt = 0;
+	// Dernière position valide, renvoyée tant que le relâché n'est pas
+	// confirmé
+	static lv_point_t last_point = {0, 0};
 
 	/* Read touch controller data */
 	esp_lcd_touch_read_data(drv->user_data);
@@ -76,8 +103,12 @@ static void lvgl_touchpad_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
 	bool touchpad_pressed = esp_lcd_touch_get_coordinates(
 		drv->user_data, touchpad_x, touchpad_y, NULL, &touchpad_cnt, 5);
 
-	// printf("CCCCCCCCCCCCC=%d  \r\n",touchpad_cnt);
-	bool pressed = touchpad_pressed && touchpad_cnt > 0;
+	bool raw_pressed = touchpad_pressed && touchpad_cnt > 0;
+	if (raw_pressed) {
+		last_point.x = touchpad_x[0];
+		last_point.y = touchpad_y[0];
+	}
+	bool pressed = touch_debounce(raw_pressed);
 	if (pressed && screen_asleep) {
 		LVGL_Screen_Wake();
 		wake_touch_pending = true;
@@ -90,11 +121,8 @@ static void lvgl_touchpad_read(lv_indev_drv_t *drv, lv_indev_data_t *data) {
 	}
 
 	if (pressed) {
-		data->point.x = touchpad_x[0];
-		data->point.y = touchpad_y[0];
+		data->point = last_point;
 		data->state = LV_INDEV_STATE_PR;
-		// printf("X=%u Y=%u num=%d \r\n", data->point.x,
-		// data->point.y,touchpad_cnt);
 	} else {
 		data->state = LV_INDEV_STATE_REL;
 	}
