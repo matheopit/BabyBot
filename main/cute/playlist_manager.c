@@ -194,9 +194,23 @@ void playlist_browse_parent(void) {
 
 /* ---------- Playlists ---------- */
 
+static playlist_t active_playlist = PLAYLIST_INITIALIZER;
+
+playlist_t *playlist_active(void) { return &active_playlist; }
+
 void playlist_clear(playlist_t *pl) {
 	pl->count = 0;
 	pl->current = -1;
+}
+
+bool playlist_set_single(playlist_t *pl, const char *path) {
+	playlist_clear(pl);
+	int written = snprintf(pl->paths[0], PLAYLIST_MAX_PATH_LEN, "%s", path);
+	if (written < 0 || (size_t)written >= PLAYLIST_MAX_PATH_LEN)
+		return false;
+	pl->count = 1;
+	pl->current = 0;
+	return true;
 }
 
 /* La playlist (precedent/suivant) devient la liste des .mp3 du dossier

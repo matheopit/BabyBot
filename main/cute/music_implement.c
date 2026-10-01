@@ -21,3 +21,11 @@ void audio_set_volume(uint8_t percent) {
 	Volume_adjustment(percent);
 } /* regle le volume, 0-100 */
 uint8_t audio_get_volume(void) { return Volume; }
+
+/* true quand le morceau en cours est termine (ou arrete) */
+bool audio_is_finished(void) { return Music_Finished(); }
+/* identifiant du dernier morceau lance, quel que soit le module qui l'a lance
+ * (change a chaque nouveau morceau) */
+uint32_t audio_get_track_id(void) { return Music_Track_Id(); }
+/* chemin du dernier morceau lance, "" si aucun */
+const char *audio_get_current_path(void) { return Music_Current_Path(); }

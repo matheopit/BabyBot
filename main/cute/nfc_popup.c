@@ -38,26 +38,27 @@ static bool popup_is_dir = false;
 static bool music_playing = false; // musique lancée par « Jouer »
 
 // Playlist d'un répertoire : morceaux triés (playlist_manager), enchaînés par
-// playlist_timer
-static playlist_t playlist = PLAYLIST_INITIALIZER;
+// playlist_timer. On utilise la playlist partagée (playlist_active()) : le
+// lecteur LVGL la retrouve donc en y entrant.
 static uint32_t playlist_track_id = 0; // Music_Track_Id() du morceau lancé
 static lv_timer_t *playlist_timer = NULL;
 
+// Arrête l'enchaînement. La playlist partagée n'est pas vidée : le lecteur
+// peut encore la reprendre (et elle a pu être remplacée par la sienne).
 static void playlist_stop(void) {
 	if (playlist_timer != NULL) {
 		lv_timer_del(playlist_timer);
 		playlist_timer = NULL;
 	}
-	playlist_clear(&playlist);
 }
 
 // Joue le morceau idx de la playlist ; false s'il n'existe pas (fin)
 static bool playlist_play(int32_t idx) {
-	const char *path = playlist_select(&playlist, idx);
+	const char *path = playlist_select(playlist_active(), idx);
 	if (path == NULL)
 		return false;
 	ESP_LOGI(TAG, "Playlist %d/%u : %s", (int)idx + 1,
-			 (unsigned)playlist_count(&playlist), path);
+			 (unsigned)playlist_count(playlist_active()), path);
 	Play_Music_ex(path);
 	playlist_track_id = Music_Track_Id();
 	return true;
@@ -75,7 +76,7 @@ static void playlist_timer_cb(lv_timer_t *timer) {
 	}
 	if (!Music_Finished())
 		return;
-	if (!playlist_play(playlist_current(&playlist) + 1)) {
+	if (!playlist_play(playlist_current(playlist_active()) + 1)) {
 		ESP_LOGI(TAG, "Fin de la playlist");
 		playlist_stop();
 		music_playing = false;
@@ -84,11 +85,11 @@ static void playlist_timer_cb(lv_timer_t *timer) {
 
 static void playlist_start(const char *dir_path) {
 	playlist_stop();
-	if (!playlist_load_dir(&playlist, dir_path)) {
+	if (!playlist_load_dir(playlist_active(), dir_path)) {
 		ESP_LOGE(TAG, "Impossible d'ouvrir %s", dir_path);
 		return;
 	}
-	if (playlist_count(&playlist) == 0) {
+	if (playlist_count(playlist_active()) == 0) {
 		ESP_LOGW(TAG, "Aucun .mp3 dans %s", dir_path);
 		return;
 	}
@@ -113,6 +114,8 @@ static void play_btn_event_cb(lv_event_t *e) {
 	} else {
 		ESP_LOGI(TAG, "Lecture de %s", popup_path);
 		playlist_stop();
+		// Le lecteur LVGL voit ce morceau comme sa playlist (un seul titre)
+		playlist_set_single(playlist_active(), popup_path);
 		Play_Music_ex(popup_path);
 		music_playing = true;
 	}

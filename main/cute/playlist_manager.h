@@ -87,8 +87,17 @@ void playlist_browse_parent(void);
 
 // ---------- Playlists ----------
 
+// Playlist partagée « en cours de lecture » : celle du lecteur LVGL, que la
+// popup NFC remplit aussi quand elle lance un morceau ou un répertoire, pour
+// que le lecteur la retrouve en y entrant.
+playlist_t *playlist_active(void);
+
 // Vide la playlist et désélectionne le morceau courant (-1).
 void playlist_clear(playlist_t *pl);
+
+// La playlist devient ce seul fichier (sélectionné). Renvoie false (playlist
+// vidée) si le chemin est trop long.
+bool playlist_set_single(playlist_t *pl, const char *path);
 
 // La playlist devient la liste des .mp3 du dossier affiché par l'explorateur.
 // Renvoie l'index dans la playlist du fichier correspondant à l'entrée

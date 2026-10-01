@@ -73,14 +73,25 @@ extern uint32_t audio_get_duration_sec(
 extern void audio_set_volume(uint8_t percent); /* regle le volume, 0-100 */
 extern uint8_t audio_get_volume(
 	void); /* volume actuel, 0-100 (utilise a l'ouverture de l'ecran) */
+extern bool audio_is_finished(void); /* morceau en cours termine ou arrete */
+extern uint32_t audio_get_track_id(
+	void); /* identifiant du dernier morceau lance, par n'importe quel module */
+extern const char *audio_get_current_path(
+	void); /* chemin du dernier morceau lance ("" si aucun) */
 /* ======================================================================== */
 
 static lv_color_t wire_color;
 
 /* ---------- Etat du lecteur ---------- */
 
-static playlist_t playlist = PLAYLIST_INITIALIZER;
 static bool is_playing = false;
+/* Morceau en cours dans le pipeline audio (audio_get_track_id) lors de la
+ * derniere synchro. Si l'identifiant change sans que ce soit nous (tag NFC,
+ * reveil...), on s'aligne dessus (player_sync_ui). */
+static uint32_t synced_track_id = 0;
+/* true si le morceau en cours a ete lance par ce lecteur : lui seul enchaine
+ * alors sur le suivant en fin de morceau (la popup NFC enchaine la sienne) */
+static bool player_owns_track = false;
 
 static lv_obj_t *title_label;
 static lv_obj_t *progress_bar;
@@ -148,15 +159,9 @@ static void update_play_pause_icon(void) {
 					  is_playing ? LV_SYMBOL_PAUSE : LV_SYMBOL_PLAY);
 }
 
-static void load_and_play_track(int32_t idx) {
-	const char *path = playlist_select(&playlist, idx);
-	if (path == NULL)
-		return;
-
-	audio_play_file(path);
-	is_playing = true;
-	update_play_pause_icon();
-
+/* Affiche le titre, la duree et remet la progression a zero pour le morceau
+ * en cours dans le pipeline audio */
+static void show_track_info(const char *path) {
 	lv_label_set_text(title_label, playlist_path_basename(path));
 
 	uint32_t duration = audio_get_duration_sec();
@@ -170,12 +175,43 @@ static void load_and_play_track(int32_t idx) {
 	lv_label_set_text(time_total_label, buf);
 }
 
+static void load_and_play_track(int32_t idx) {
+	const char *path = playlist_select(playlist_active(), idx);
+	if (path == NULL)
+		return;
+
+	audio_play_file(path);
+	synced_track_id = audio_get_track_id();
+	player_owns_track = true;
+	is_playing = true;
+	update_play_pause_icon();
+	show_track_info(path);
+}
+
+/* Aligne l'IHM sur le morceau en cours quand il n'a pas ete lance par ce
+ * lecteur (tag NFC, reveil...) : titre, duree, etat lecture/pause. La
+ * playlist, elle, est deja a jour pour un tag NFC (playlist_active). Appelee
+ * a l'entree sur l'ecran et par le timer. */
+static void player_sync_ui(void) {
+	uint32_t id = audio_get_track_id();
+	if (id == synced_track_id)
+		return;
+	synced_track_id = id;
+	player_owns_track = false;
+
+	is_playing = !audio_is_finished();
+	update_play_pause_icon();
+	/* Un morceau deja termine (son de demarrage...) ne remplace pas le titre */
+	if (is_playing)
+		show_track_info(audio_get_current_path());
+}
+
 static void play_next_track(void) {
-	load_and_play_track(playlist_next_index(&playlist));
+	load_and_play_track(playlist_next_index(playlist_active()));
 }
 
 static void play_prev_track(void) {
-	load_and_play_track(playlist_prev_index(&playlist));
+	load_and_play_track(playlist_prev_index(playlist_active()));
 }
 
 /* ---------- Callbacks des controles ---------- */
@@ -192,7 +228,7 @@ static void next_btn_event_cb(lv_event_t *e) {
 
 static void play_pause_btn_event_cb(lv_event_t *e) {
 	LV_UNUSED(e);
-	if (playlist_current(&playlist) < 0)
+	if (audio_get_current_path()[0] == '\0')
 		return; /* aucun morceau charge */
 
 	if (is_playing) {
@@ -201,7 +237,7 @@ static void play_pause_btn_event_cb(lv_event_t *e) {
 	} else if (!audio_resume()) {
 		/* Plus rien en pause (morceau termine, ou un autre son joue
 		 * entre-temps) : on relance le morceau courant */
-		load_and_play_track(playlist_current(&playlist));
+		load_and_play_track(playlist_current(playlist_active()));
 		return;
 	} else {
 		is_playing = true;
@@ -214,7 +250,8 @@ static void play_pause_btn_event_cb(lv_event_t *e) {
 
 static void ui_update_timer_cb(lv_timer_t *timer) {
 	LV_UNUSED(timer);
-	if (!is_playing || playlist_current(&playlist) < 0)
+	player_sync_ui();
+	if (!is_playing)
 		return;
 
 	uint32_t pos = audio_get_position_sec();
@@ -226,9 +263,15 @@ static void ui_update_timer_cb(lv_timer_t *timer) {
 	format_mmss(pos, buf, sizeof(buf));
 	lv_label_set_text(time_elapsed_label, buf);
 
-	/* Fin de morceau -> passe automatiquement au suivant */
+	/* Fin de morceau -> passe automatiquement au suivant, sauf si c'est la
+	 * popup NFC qui enchaine sa propre playlist */
 	if (dur > 0 && pos >= dur) {
-		play_next_track();
+		if (player_owns_track) {
+			play_next_track();
+		} else if (audio_is_finished()) {
+			is_playing = false;
+			update_play_pause_icon();
+		}
 	}
 }
 
@@ -273,7 +316,7 @@ static void browse_row_event_cb(lv_event_t *e) {
 	if (!entry->is_dir) {
 		/* La playlist devient les .mp3 du dossier affiche, puis on lance le
 		 * fichier choisi */
-		load_and_play_track(playlist_set_from_browse(&playlist, idx));
+		load_and_play_track(playlist_set_from_browse(playlist_active(), idx));
 		browse_modal_close();
 		return;
 	}
@@ -687,6 +730,9 @@ void show_player() {
 		mp3_player_create(player_screen);
 		mp3_player_set_bottom_click_cb(on_bottom_zone_clicked);
 	}
+	/* Une musique a pu etre lancee ailleurs (tag NFC) depuis la derniere
+	 * visite : on remet l'ecran a jour avant de l'afficher */
+	player_sync_ui();
 	lv_scr_load(player_screen);
 }
 
