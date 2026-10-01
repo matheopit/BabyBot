@@ -1,12 +1,14 @@
 #include "app_manager.h"
 #include "LVGL_Driver.h"
 #include "PCM5101.h"
+#include "Wireless.h"
 #include "cJSON.h"
 #include "draw_function.h"
 #include "esp_log.h"
 #include "lvgl.h"
-#include "lwip/apps/sntp.h"
 #include "nfc_popup.h"
+#include "nfc_tags.h"
+#include "ntag_read.h"
 #include "robot_cute.h"
 #include "wakeup_settings.h"
 #include <errno.h>
@@ -18,12 +20,14 @@ static const char *TAG = "APP_MANAGER";
 
 #define CONFIG_DIR "/sdcard/settings"
 #define CONFIG_FILE_PATH CONFIG_DIR "/config.json"
-// Musique associée à un tag : NFC_MUSIC_DIR/<UID en hexa>.mp3
+// Musique associée à un tag : voir nfc_tags.h, à défaut
+// NFC_MUSIC_DIR/<UID en hexa>.mp3 (ancien format)
 #define NFC_MUSIC_DIR "/sdcard"
 
 // État global
 static mood_t g_mood = MOOD_NORMAL;
 static alarm_t g_alarm = {7, 15, 0x1F, false, "", false};
+static uint8_t g_volume = VOLUME_DEFAULT; // 0-100, appliqué au démarrage
 
 static void app_manager_parse_json(const char *json);
 static void app_manager_load_config(void);
@@ -93,6 +97,22 @@ void app_manager_set_alarm(int hour, int minute, int days, bool enabled) {
 }
 
 // ===============================
+// VOLUME
+// ===============================
+uint8_t app_manager_get_volume(void) { return g_volume; }
+
+// Mémorise le volume et, si save, réécrit config.json (tâche LVGL)
+void app_manager_set_volume(uint8_t volume, bool save) {
+	if (volume > 100)
+		volume = 100;
+	if (volume == g_volume)
+		return;
+	g_volume = volume;
+	if (save)
+		set_wakeup_config();
+}
+
+// ===============================
 // JSON PARSER
 // ===============================
 static void app_manager_parse_json(const char *json) {
@@ -135,6 +155,13 @@ static void app_manager_parse_json(const char *json) {
 		} else {
 			ESP_LOGE(TAG, "Alarme invalide");
 		}
+	}
+
+	// Volume (0-100)
+	cJSON *volume = cJSON_GetObjectItem(root, "volume");
+	if (cJSON_IsNumber(volume)) {
+		int v = volume->valueint;
+		g_volume = v < 0 ? 0 : (v > 100 ? 100 : v);
 	}
 
 	cJSON_Delete(root);
@@ -188,8 +215,8 @@ static void app_manager_post_msg(int msg) {
 	}
 }
 
-// Tag posé (boucle principale) : ouvre la popup si NFC_MUSIC_DIR/<UID>.mp3
-// existe
+// Tag posé (boucle principale) : ouvre la popup si le tag est associé à un
+// mp3 ou à un répertoire (NFC_TAGS_FILE_PATH, sinon NFC_MUSIC_DIR/<UID>.mp3)
 static void app_manager_handle_nfc(void) {
 	nfc_tag_t tag;
 	taskENTER_CRITICAL(&nfc_lock);
@@ -200,22 +227,53 @@ static void app_manager_handle_nfc(void) {
 	for (int i = 0; i < tag.len && i < NFC_UID_MAX_LEN; i++)
 		sprintf(uid_hex + 2 * i, "%02X", tag.uid[i]);
 
-	char path[64];
-	snprintf(path, sizeof(path), "%s/%s.mp3", NFC_MUSIC_DIR, uid_hex);
-
-	struct stat st;
-	if (stat(path, &st) != 0) {
-		ESP_LOGW(TAG, "Tag %s inconnu : copier un mp3 sous %s", uid_hex, path);
-		return;
+	char path[ALARM_SOUND_PATH_LEN];
+	bool is_dir = false;
+	if (!nfc_tags_lookup(uid_hex, path, sizeof(path), &is_dir)) {
+		struct stat st;
+		snprintf(path, sizeof(path), "%s/%s.mp3", NFC_MUSIC_DIR, uid_hex);
+		if (stat(path, &st) != 0) {
+			ESP_LOGW(TAG, "Tag %s inconnu : l'ajouter dans %s", uid_hex,
+					 NFC_TAGS_FILE_PATH);
+			return;
+		}
 	}
 
-	ESP_LOGI(TAG, "Tag %s : %s", uid_hex, path);
-	nfc_popup_open(path);
+	ESP_LOGI(TAG, "Tag %s : %s%s", uid_hex, path, is_dir ? " (playlist)" : "");
+	nfc_popup_open(path, is_dir);
 }
 
 // Messages NFC reçus par la boucle principale (tâche LVGL)
+static void nfc_task(void *parameter) {
+	while (1) {
+		init_nfc();
+		while (1) {
+			nfc_loop();
+		}
+	}
+}
+
+// Quitte le splash : écran robot + démarrage de la lecture NFC (une seule fois)
+static bool app_started = false;
+void app_manager_start(void) {
+	if (app_started)
+		return;
+	Volume_adjustment(app_manager_get_volume());
+	app_started = true;
+	app_manager_choose_frame(FRAME_SMILE);
+	xTaskCreatePinnedToCore(nfc_task, "NFC task", 4096, NULL, 4, NULL, 0);
+}
+
+bool app_manager_is_started(void) { return app_started; }
+
 void app_manager_handle_msg(int msg) {
 	switch (msg) {
+	case MSG_TIME_READY:
+		ESP_LOGI(TAG, "Heure OK → changement de frame");
+		app_manager_start();
+		// Le WiFi ne sert qu'à la synchro de l'heure au démarrage
+		WIFI_Stop();
+		break;
 	case MSG_NFC_TAG:
 		app_manager_handle_nfc();
 		break;
@@ -282,62 +340,6 @@ void app_manager_choose_frame(frame_select_t frame) {
 	}
 }
 
-bool app_manager_time_is_synced(void) {
-	time_t now;
-	struct tm timeinfo = {0};
-
-	time(&now);
-	localtime_r(&now, &timeinfo);
-
-	return (timeinfo.tm_year > 100); // année > 2000 → OK
-}
-
-static void apply_timezone_paris(void) {
-	setenv("TZ", "CET-1CEST,M3.5.0/2,M10.5.0/3", 1);
-	tzset();
-	vTaskDelay(pdMS_TO_TICKS(200));
-}
-
-static void wait_for_sntp_sync(void) {
-	int retry = 0;
-	const int max_retry = 10;
-
-	while (!app_manager_time_is_synced() && retry < max_retry) {
-		printf("SNTP non sync...\n");
-		vTaskDelay(pdMS_TO_TICKS(500));
-		retry++;
-	}
-
-	if (app_manager_time_is_synced()) {
-		printf("SNTP sync !\n");
-		apply_timezone_paris();
-
-		time_t now;
-		struct tm ti;
-		time(&now);
-		localtime_r(&now, &ti);
-
-		printf("Heure Paris: %02d:%02d:%02d\n", ti.tm_hour, ti.tm_min,
-			   ti.tm_sec);
-	} else {
-		printf("SNTP échec de synchro\n");
-	}
-}
-
-void app_manager_setup_time() {
-	/* --- Lancer SNTP --- */
-	sntp_setoperatingmode(SNTP_OPMODE_POLL);
-	sntp_setservername(0, "pool.ntp.org");
-	sntp_init();
-	printf("Synchronisation NTP lancée\n");
-	wait_for_sntp_sync();
-	if (app_manager_time_is_synced()) {
-		sntp_stop(); // heure obtenue, plus besoin d'interroger le serveur
-	}
-	int msg = MSG_TIME_READY;
-	xQueueSend(app_msg_queue, &msg, 0);
-}
-
 alarm_t *getAlarm() { return &g_alarm; }
 
 // ===============================
@@ -361,6 +363,7 @@ bool set_wakeup_config(void) {
 	cJSON_AddNumberToObject(alarm, "days", g_alarm.days & 0x7F); // bit 0 = lundi
 	cJSON_AddBoolToObject(alarm, "enabled", g_alarm.enabled);
 	cJSON_AddStringToObject(alarm, "sound", g_alarm.sound);
+	cJSON_AddNumberToObject(root, "volume", g_volume);
 
 	char *json = cJSON_Print(root);
 	cJSON_Delete(root);
@@ -386,8 +389,24 @@ bool set_wakeup_config(void) {
 		return false;
 	}
 
-	ESP_LOGI(TAG, "Réveil sauvegardé dans %s", CONFIG_FILE_PATH);
+	ESP_LOGI(TAG, "Réglages sauvegardés dans %s", CONFIG_FILE_PATH);
 	return true;
+}
+
+// true entre le déclenchement du réveil et l'appui sur « Arrêter »
+static bool alarm_ringing = false;
+
+bool app_manager_alarm_ringing(void) { return alarm_ringing; }
+
+// Bouton « Arrêter le réveil » de l'écran robot (tâche LVGL)
+void app_manager_alarm_stop(void) {
+	if (!alarm_ringing)
+		return;
+	ESP_LOGI(TAG, "Réveil arrêté");
+	alarm_ringing = false;
+	Music_stop();
+	app_manager_set_mood(MOOD_NORMAL);
+	robot_alarm_update();
 }
 
 // Déclenche le réveil à l'heure et aux jours configurés (une fois par minute)
@@ -418,7 +437,11 @@ void wakeup(void) {
 
 	printf("Réveil ! %02d:%02d\n", ti.tm_hour, ti.tm_min);
 	LVGL_Screen_Wake();
+	alarm_ringing = true;
 	app_manager_notify(EVENT_ALARM_TRIGGER, NULL);
+	// Affiche l'écran robot avec le bouton « Arrêter le réveil »
+	pie_dialog_close();
+	app_manager_choose_frame(FRAME_SMILE);
 	if (alarm->sound[0] != '\0') {
 		Play_Music_ex(alarm->sound);
 	}

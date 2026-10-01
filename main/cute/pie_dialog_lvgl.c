@@ -22,6 +22,7 @@
  */
 
 #include "app_manager.h"
+#include "draw_function.h"
 #include "lvgl.h"
 #include <stdint.h>
 #include <stdio.h>
@@ -92,7 +93,6 @@ static lv_obj_t *pie_hit_overlay;
 static lv_obj_t *pie_dialog_modal_bg = NULL;
 static lv_obj_t *pie_dialog_panel = NULL;
 
-static void pie_dialog_close(void);
 
 /* ---------- Action metier appelee quand une section est choisie ---------- */
 
@@ -362,7 +362,7 @@ static void pie_dialog_close_btn_event_cb(lv_event_t *e) {
 	pie_dialog_close();
 }
 
-static void pie_dialog_close(void) {
+void pie_dialog_close(void) {
 	if (pie_dialog_modal_bg == NULL)
 		return;
 	lv_obj_del(pie_dialog_modal_bg);
@@ -377,6 +377,9 @@ static void pie_dialog_close(void) {
  */
 void pie_dialog_open(lv_obj_t *parent_scr) {
 	if (pie_dialog_modal_bg != NULL)
+		return;
+	// Pas de menu tant que le réveil sonne : il faut d'abord l'arrêter
+	if (app_manager_alarm_ringing())
 		return;
 
 	wire_color = lv_color_hex(WIRE_COLOR_HEX);

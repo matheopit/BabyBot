@@ -6,9 +6,16 @@
 #include "Wireless.h"
 #include "app_manager.h"
 #include "esp_pm.h"
-#include "ntag_read.h"
+#include "time_sync.h"
 #include <time.h>
 QueueHandle_t app_msg_queue;
+
+// Délai max d'attente de la synchro de l'heure avant d'afficher le robot
+// quand même (Wi-Fi absent, wifi.txt manquant, serveur NTP injoignable…)
+#define TIME_SYNC_TIMEOUT_MS 20000
+// Délai après lequel on renonce à l'heure et on coupe le Wi-Fi pour ne pas
+// vider la batterie (le réveil ne fonctionnera pas sans heure)
+#define WIFI_GIVE_UP_MS (5 * 60 * 1000)
 
 void Driver_Loop(void *parameter) {
 	Wireless_Init();
@@ -20,21 +27,11 @@ void Driver_Loop(void *parameter) {
 	vTaskDelete(NULL);
 }
 
-static void nfc_task(void *parameter) {
-	while (1) {
-		init_nfc();
-		while (1) {
-			nfc_loop();
-		}
-	}
-}
-
 void Driver_Init(void) {
 	PWR_Init();
 	BAT_Init();
 	Flash_Searching();
-	xTaskCreatePinnedToCore(Driver_Loop, "Other Driver task", 4096, NULL, 3,
-							NULL, 0);
+	xTaskCreatePinnedToCore(Driver_Loop, "Driver task", 4096, NULL, 3, NULL, 0);
 }
 
 // Gestion d'énergie : fréquence CPU dynamique et light sleep automatique
@@ -66,31 +63,36 @@ void app_main(void) {
 	lv_refr_now(NULL);
 	vTaskDelay(pdMS_TO_TICKS(20)); // fin du dernier transfert DMA
 	LCD_Display_On();
-	Volume_adjustment(10);
+	Volume_adjustment(10); // volume fixe pour le son de démarrage
 	Play_Music("/sdcard", "startup.mp3");
 	Driver_Init();
+
+	const TickType_t boot_tick = xTaskGetTickCount();
 
 	while (1) {
 
 		int msg;
 		if (xQueueReceive(app_msg_queue, &msg, 0)) {
-			if (msg == MSG_TIME_READY) {
-				static bool time_ready_done = false;
-				if (!time_ready_done) {
-					time_ready_done = true;
-					printf("Heure OK → changement de frame\n");
-					app_manager_choose_frame(FRAME_SMILE);
-					
-					xTaskCreatePinnedToCore(nfc_task, "Other Driver task", 4096,
-											NULL, 4, NULL, 1);
-				}
-				// Le WiFi ne sert qu'à la synchro de l'heure au démarrage
-				if (app_manager_time_is_synced()) {
-					WIFI_Stop();
-				}
-			} else {
-				app_manager_handle_msg(msg);
-			}
+			app_manager_handle_msg(msg);
+		}
+
+		// Pas d'heure au bout du délai : on démarre quand même, sans bloquer
+		// l'enfant sur le splash. Le Wi-Fi continue d'essayer en fond.
+		if (!app_manager_is_started() && xTaskGetTickCount() - boot_tick >
+								pdMS_TO_TICKS(TIME_SYNC_TIMEOUT_MS)) {
+			printf("Heure non synchronisée après %d s, démarrage quand même\n",
+				   TIME_SYNC_TIMEOUT_MS / 1000);
+			app_manager_start();
+		}
+
+		static bool wifi_given_up = false;
+		if (!wifi_given_up && !time_sync_is_synced() &&
+			xTaskGetTickCount() - boot_tick > pdMS_TO_TICKS(WIFI_GIVE_UP_MS)) {
+			wifi_given_up = true;
+			printf("Heure toujours absente après %d min, arrêt du Wi-Fi\n",
+				   WIFI_GIVE_UP_MS / 60000);
+			time_sync_stop();
+			WIFI_Stop();
 		}
 
 		wakeup();

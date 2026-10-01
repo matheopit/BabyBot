@@ -12,7 +12,7 @@ une horloge, un réglage de réveil, un lecteur MP3 et un lecteur de tags NFC.
 | Tactile         | CST328                | I2C port 1 (SDA 1, SCL 3, INT 4, RST 2) |
 | Audio           | PCM5101 (DAC I2S)     | I2S 1 (BCLK 48, WS 38, DOUT 47)  |
 | Carte SD        | SDMMC 1 bit           | CLK 14, CMD 17, D0 16            |
-| NFC             | PN532                 | I2C port 0 (SDA 11, SCL 10)      |
+| NFC             | PN532                 | UART 0 / HSU 921600 bauds (RX 43, TX 44) |
 | Batterie        | ADC1 canal 7          | GPIO 8                           |
 | Bouton marche   | —                     | entrée GPIO 6, maintien GPIO 7   |
 
@@ -20,7 +20,11 @@ une horloge, un réglage de réveil, un lecteur MP3 et un lecteur de tags NFC.
 
 1. Écran de démarrage + lecture de `startup.mp3`.
 2. Connexion Wi-Fi avec les identifiants de la carte SD, puis synchro de l'heure
-   (SNTP `pool.ntp.org`, fuseau Europe/Paris).
+   (SNTP `pool.ntp.org`, fuseau Europe/Paris). Sans heure au bout de 20 s
+   (pas de Wi-Fi, `wifi.txt` absent…), le robot démarre quand même ; le Wi-Fi
+   continue d'essayer en fond et le réveil ne sonne qu'une fois l'heure connue.
+   Le Wi-Fi est coupé dès que l'heure est obtenue, ou au bout de 5 min sans
+   heure pour préserver la batterie.
 3. Écran du robot. Un appui n'importe où ouvre le menu circulaire :
    **Réveil**, **Horloge**, **Music**, **BabyBot** (retour au robot).
 4. Lecture NFC en tâche de fond (PN532).
@@ -32,15 +36,32 @@ une horloge, un réglage de réveil, un lecteur MP3 et un lecteur de tags NFC.
 | Fichier       | Rôle                                  |
 |---------------|---------------------------------------|
 | `startup.mp3` | son joué au démarrage                 |
-| `wifi.txt`    | identifiants Wi-Fi (JSON, voir ci-dessous) |
+| `settings/wifi.txt` | identifiants Wi-Fi (JSON, voir ci-dessous) |
 | `*.mp3`       | morceaux pour le lecteur de musique   |
+| `settings/config.json` | réglages sauvegardés par BabyBot : réveil et volume (créé automatiquement) |
+| `settings/nfc_tags.json` | musique associée à chaque tag NFC (voir ci-dessous) |
 
-`wifi.txt` :
+`settings/wifi.txt` :
 
 ```json
 {
   "ssid": "NomDuReseau",
   "password": "MotDePasse"
+}
+```
+
+`settings/nfc_tags.json` associe l'UID d'un tag (en hexa, tel qu'affiché
+dans les logs `Tag … inconnu`) soit à un fichier `.mp3`, soit à un répertoire.
+Pour un répertoire, « Jouer » enchaîne tous ses `.mp3` par ordre alphabétique.
+Un chemin relatif part de `/sdcard`. Un tag absent du fichier joue
+`/sdcard/<UID>.mp3` s'il existe.
+
+```json
+{
+  "tags": [
+    { "uid": "04A1B2C3D4E5F6", "path": "/sdcard/histoires/loup.mp3" },
+    { "uid": "8A3F2B11", "path": "comptines" }
+  ]
 }
 ```
 
@@ -116,11 +137,11 @@ main/
 ├── BAT_Driver/            mesure de la batterie
 ├── LCD_Driver/            ST7789T
 ├── LVGL_Driver/           intégration LVGL (affichage + tactile)
-├── NFC_Tag/               lecture de tags NTAG via PN532
+├── NFC_Tag/               lecture de tags NTAG via PN532 (UART/HSU)
 ├── PWR_Key/               bouton marche/arrêt
 ├── SD_Card/               carte SD
 ├── Touch_Driver/          CST328 (+ esp_lcd_touch)
-├── Wireless/              Wi-Fi, lecture de wifi.txt
+├── Wireless/              Wi-Fi, lecture de settings/wifi.txt
 └── cute/                  interface : robot, menu, horloge, réveil, musique
 ```
 
@@ -134,3 +155,20 @@ pilotes tiers (`esp_lcd_touch`, `Vernon_ST7789T`) et les images générées
 ```bash
 git config blame.ignoreRevsFile .git-blame-ignore-revs
 ```
+
+## Licence
+
+Le code de BabyBot est distribué sous licence MIT (voir `LICENSE`), à
+l'exception des fichiers tiers suivants, qui restent sous leur propre licence :
+
+- `main/Touch_Driver/esp_lcd_touch/` et `main/LCD_Driver/Vernon_ST7789T/` :
+  Espressif Systems, Apache-2.0 (voir l'en-tête SPDX de chaque fichier).
+- Les pilotes matériels de `main/` (`Audio_Driver`, `BAT_Driver`,
+  `LCD_Driver`, `LVGL_Driver`, `PWR_Key`, `SD_Card`, `Touch_Driver`,
+  `Wireless`) sont dérivés du programme d'exemple Waveshare
+  ESP32-S3-Touch-LCD-2.8, publié sans licence explicite. Seules les
+  modifications apportées à ces fichiers sont couvertes par la licence MIT.
+
+Dépendances (non incluses dans ce dépôt) : LVGL (MIT), cJSON (MIT),
+esp-idf-pn532 (MIT), esp-audio-player (Apache-2.0), esp-libhelix-mp3
+(Apache-2.0 pour l'enveloppe ; le décodeur Helix est sous RPSL/RCSL).

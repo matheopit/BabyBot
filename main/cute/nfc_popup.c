@@ -2,8 +2,11 @@
  * @file nfc_popup.c
  * @brief Popup modale ouverte quand un tag NFC connu est posé, quel que soit
  *        l'écran affiché. Deux boutons :
- *          - « Jouer »  : joue le mp3 du tag (arrêté quand le tag est retiré)
- *          - « Wakeup » : choisit ce mp3 comme sonnerie du réveil
+ *          - « Jouer »  : joue le mp3 du tag, ou tous les .mp3 du répertoire
+ *                         associé, dans l'ordre alphabétique (arrêté quand
+ *                         le tag est retiré)
+ *          - « Wakeup » : choisit ce mp3 comme sonnerie du réveil (absent
+ *                         pour un répertoire)
  *
  * Style fil de fer, comme le menu camembert : fond noir, contours COLOR_MAIN.
  * La popup est créée sur lv_layer_top() pour rester au-dessus de l'écran
@@ -16,6 +19,7 @@
 #include "app_manager.h"
 #include "esp_log.h"
 #include "lvgl.h"
+#include "playlist_manager.h"
 #include <stdbool.h>
 #include <string.h>
 
@@ -26,9 +30,74 @@ static const char *TAG = "NFC_POPUP";
 #define POPUP_BTN_W 80
 #define POPUP_BTN_H 50
 
+#define PLAYLIST_CHECK_MS 500
+
 static lv_obj_t *popup_bg = NULL;
 static char popup_path[ALARM_SOUND_PATH_LEN];
+static bool popup_is_dir = false;
 static bool music_playing = false; // musique lancée par « Jouer »
+
+// Playlist d'un répertoire : morceaux triés (playlist_manager), enchaînés par
+// playlist_timer. On utilise la playlist partagée (playlist_active()) : le
+// lecteur LVGL la retrouve donc en y entrant.
+static uint32_t playlist_track_id = 0; // Music_Track_Id() du morceau lancé
+static lv_timer_t *playlist_timer = NULL;
+
+// Arrête l'enchaînement. La playlist partagée n'est pas vidée : le lecteur
+// peut encore la reprendre (et elle a pu être remplacée par la sienne).
+static void playlist_stop(void) {
+	if (playlist_timer != NULL) {
+		lv_timer_del(playlist_timer);
+		playlist_timer = NULL;
+	}
+}
+
+// Joue le morceau idx de la playlist ; false s'il n'existe pas (fin)
+static bool playlist_play(int32_t idx) {
+	const char *path = playlist_select(playlist_active(), idx);
+	if (path == NULL)
+		return false;
+	ESP_LOGI(TAG, "Playlist %d/%u : %s", (int)idx + 1,
+			 (unsigned)playlist_count(playlist_active()), path);
+	Play_Music_ex(path);
+	playlist_track_id = Music_Track_Id();
+	return true;
+}
+
+// Passe au morceau suivant quand le précédent est fini ; s'arrête à la fin
+// de la playlist ou si un autre écran a lancé sa propre musique
+static void playlist_timer_cb(lv_timer_t *timer) {
+	LV_UNUSED(timer);
+	if (Music_Track_Id() != playlist_track_id) {
+		ESP_LOGI(TAG, "Autre musique lancée, fin de la playlist");
+		playlist_stop();
+		music_playing = false;
+		return;
+	}
+	if (!Music_Finished())
+		return;
+	if (!playlist_play(playlist_current(playlist_active()) + 1)) {
+		ESP_LOGI(TAG, "Fin de la playlist");
+		playlist_stop();
+		music_playing = false;
+	}
+}
+
+static void playlist_start(const char *dir_path) {
+	playlist_stop();
+	if (!playlist_load_dir(playlist_active(), dir_path)) {
+		ESP_LOGE(TAG, "Impossible d'ouvrir %s", dir_path);
+		return;
+	}
+	if (playlist_count(playlist_active()) == 0) {
+		ESP_LOGW(TAG, "Aucun .mp3 dans %s", dir_path);
+		return;
+	}
+	playlist_play(0);
+	music_playing = true;
+	playlist_timer =
+		lv_timer_create(playlist_timer_cb, PLAYLIST_CHECK_MS, NULL);
+}
 
 static void nfc_popup_close(void) {
 	if (popup_bg == NULL)
@@ -40,9 +109,16 @@ static void nfc_popup_close(void) {
 static void play_btn_event_cb(lv_event_t *e) {
 	if (lv_event_get_code(e) != LV_EVENT_CLICKED)
 		return;
-	ESP_LOGI(TAG, "Lecture de %s", popup_path);
-	Play_Music_ex(popup_path);
-	music_playing = true;
+	if (popup_is_dir) {
+		playlist_start(popup_path);
+	} else {
+		ESP_LOGI(TAG, "Lecture de %s", popup_path);
+		playlist_stop();
+		// Le lecteur LVGL voit ce morceau comme sa playlist (un seul titre)
+		playlist_set_single(playlist_active(), popup_path);
+		Play_Music_ex(popup_path);
+		music_playing = true;
+	}
 	nfc_popup_close();
 }
 
@@ -89,12 +165,13 @@ static lv_obj_t *popup_btn_create(lv_obj_t *parent, const char *text,
 	return btn;
 }
 
-void nfc_popup_open(const char *path) {
+void nfc_popup_open(const char *path, bool is_dir) {
 	lv_color_t color = lv_color_hex(COLOR_MAIN);
 
 	nfc_popup_close();
 	strncpy(popup_path, path, sizeof(popup_path) - 1);
 	popup_path[sizeof(popup_path) - 1] = '\0';
+	popup_is_dir = is_dir;
 
 	// Rallume l'écran s'il était en veille
 	LVGL_Screen_Wake();
@@ -131,6 +208,13 @@ void nfc_popup_open(const char *path) {
 
 	lv_obj_t *btn_play =
 		popup_btn_create(panel, LV_SYMBOL_PLAY "\nJouer", play_btn_event_cb);
+
+	// Le réveil ne joue qu'un fichier : pas de bouton « Wakeup » pour une
+	// playlist
+	if (is_dir) {
+		lv_obj_align(btn_play, LV_ALIGN_BOTTOM_MID, 0, 0);
+		return;
+	}
 	lv_obj_align(btn_play, LV_ALIGN_BOTTOM_LEFT, 0, 0);
 
 	lv_obj_t *btn_alarm =
@@ -140,6 +224,7 @@ void nfc_popup_open(const char *path) {
 
 void nfc_popup_tag_removed(void) {
 	nfc_popup_close();
+	playlist_stop();
 	if (music_playing) {
 		Music_stop();
 		music_playing = false;

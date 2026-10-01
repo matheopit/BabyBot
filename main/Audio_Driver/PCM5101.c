@@ -16,6 +16,10 @@ static uint32_t s_bytes_per_frame = 4; // 16 bits x 2 canaux
 static volatile uint32_t s_frames_played = 0;
 static volatile bool s_track_finished = false;
 static uint32_t s_duration_sec = 0;
+// Incrémenté à chaque morceau lancé (voir Music_Track_Id)
+static uint32_t s_track_id = 0;
+// Chemin du dernier morceau lancé (voir Music_Current_Path)
+static char s_current_path[300] = "";
 // static esp_err_t bsp_i2s_write(void *audio_buffer, size_t len, size_t
 // *bytes_written, uint32_t timeout_ms) {                     // I2S Write Init
 //     return i2s_channel_write(i2s_tx_chan, (char *)audio_buffer, len,
@@ -293,6 +297,7 @@ static void Music_track_start(FILE *f) {
 	s_duration_sec = mp3_get_duration(f);
 	s_frames_played = 0;
 	s_track_finished = false;
+	s_track_id++;
 }
 
 void Play_Music_ex(const char *filePath) {
@@ -302,6 +307,7 @@ void Play_Music_ex(const char *filePath) {
 		ESP_LOGE(TAG, "Failed to open MP3 file: %s", filePath);
 		return;
 	}
+	snprintf(s_current_path, sizeof(s_current_path), "%s", filePath);
 	Music_track_start(Music_File);
 	expected_event = AUDIO_PLAYER_CALLBACK_EVENT_PLAYING;
 	esp_err_t ret = audio_player_play(Music_File);
@@ -310,15 +316,13 @@ void Play_Music_ex(const char *filePath) {
 		fclose(Music_File);
 		return;
 	}
+	// À partir d'ici le fichier appartient au lecteur, qui le fermera
 	if (xQueueReceive(event_queue, &event, pdMS_TO_TICKS(100)) != pdPASS) {
 		ESP_LOGE(TAG, "Failed to receive playing event");
-		fclose(Music_File);
 		return;
 	}
 	if (audio_player_get_state() != AUDIO_PLAYER_STATE_PLAYING) {
 		ESP_LOGE(TAG, "Expected state to be PLAYING");
-		fclose(Music_File);
-		return;
 	}
 }
 
@@ -336,6 +340,7 @@ void Play_Music(const char *directory, const char *fileName) {
 		ESP_LOGE(TAG, "Failed to open MP3 file: %s", filePath);
 		return;
 	}
+	snprintf(s_current_path, sizeof(s_current_path), "%s", filePath);
 	Music_track_start(Music_File);
 
 	expected_event = AUDIO_PLAYER_CALLBACK_EVENT_PLAYING;
@@ -345,38 +350,37 @@ void Play_Music(const char *directory, const char *fileName) {
 		fclose(Music_File);
 		return;
 	}
+	// À partir d'ici le fichier appartient au lecteur, qui le fermera
 	if (xQueueReceive(event_queue, &event, pdMS_TO_TICKS(100)) != pdPASS) {
 		ESP_LOGE(TAG, "Failed to receive playing event");
-		fclose(Music_File);
 		return;
 	}
 	if (audio_player_get_state() != AUDIO_PLAYER_STATE_PLAYING) {
 		ESP_LOGE(TAG, "Expected state to be PLAYING");
-		fclose(Music_File);
-		return;
 	}
 }
 
-void Music_resume(void) {
-	if (audio_player_get_state() != AUDIO_PLAYER_STATE_PLAYING) {
-		expected_event = AUDIO_PLAYER_CALLBACK_EVENT_PLAYING;
-		esp_err_t ret = audio_player_resume();
-		if (ret != ESP_OK) {
-			ESP_LOGE(TAG, "Failed to resume audio: %s", esp_err_to_name(ret));
-			fclose(Music_File);
-			return;
-		}
-		if (xQueueReceive(event_queue, &event, pdMS_TO_TICKS(100)) != pdPASS) {
-			ESP_LOGE(TAG, "Failed to receive playing event after resume");
-			fclose(Music_File);
-			return;
-		}
-		if (audio_player_get_state() != AUDIO_PLAYER_STATE_PLAYING) {
-			ESP_LOGE(TAG, "Expected state to be RESUME");
-			fclose(Music_File);
-			return;
-		}
+// Reprend la lecture en pause. Renvoie false s'il n'y a rien à reprendre
+// (morceau terminé ou arrêté entre-temps) : l'appelant doit relancer le
+// morceau. Le fichier appartient au lecteur, qui le ferme lui-même : on ne
+// fait jamais de fclose ici.
+bool Music_resume(void) {
+	audio_player_state_t state = audio_player_get_state();
+	if (state == AUDIO_PLAYER_STATE_PLAYING)
+		return true;
+	if (state != AUDIO_PLAYER_STATE_PAUSE)
+		return false;
+
+	expected_event = AUDIO_PLAYER_CALLBACK_EVENT_PLAYING;
+	esp_err_t ret = audio_player_resume();
+	if (ret != ESP_OK) {
+		ESP_LOGE(TAG, "Failed to resume audio: %s", esp_err_to_name(ret));
+		return false;
 	}
+	if (xQueueReceive(event_queue, &event, pdMS_TO_TICKS(100)) != pdPASS) {
+		ESP_LOGE(TAG, "Failed to receive playing event after resume");
+	}
+	return audio_player_get_state() == AUDIO_PLAYER_STATE_PLAYING;
 }
 void Music_pause(void) {
 	if (audio_player_get_state() == AUDIO_PLAYER_STATE_PLAYING) {
@@ -384,18 +388,14 @@ void Music_pause(void) {
 		esp_err_t ret = audio_player_pause();
 		if (ret != ESP_OK) {
 			ESP_LOGE(TAG, "Failed to pause audio: %s", esp_err_to_name(ret));
-			fclose(Music_File);
 			return;
 		}
 		if (xQueueReceive(event_queue, &event, pdMS_TO_TICKS(100)) != pdPASS) {
 			ESP_LOGE(TAG, "Failed to receive pause event");
-			fclose(Music_File);
 			return;
 		}
 		if (audio_player_get_state() != AUDIO_PLAYER_STATE_PAUSE) {
 			ESP_LOGE(TAG, "Expected state to be PAUSE");
-			fclose(Music_File);
-			return;
 		}
 	}
 }
@@ -422,6 +422,17 @@ uint32_t Music_Elapsed(void) {
 		return s_duration_sec;
 	return elapsed;
 }
+
+// true quand le morceau en cours est terminé (ou arrêté)
+bool Music_Finished(void) { return s_track_finished; }
+
+// Identifiant du dernier morceau lancé : permet de savoir si un autre
+// module a lancé un morceau entre-temps
+uint32_t Music_Track_Id(void) { return s_track_id; }
+
+// Chemin du dernier morceau lancé (chaîne vide si aucun), quel que soit le
+// module qui l'a lancé (lecteur, tag NFC, réveil)
+const char *Music_Current_Path(void) { return s_current_path; }
 
 void Volume_adjustment(uint8_t Vol) {
 	if (Vol > Volume_MAX)

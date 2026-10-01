@@ -20,6 +20,8 @@ idf_component_register(
                               "./cute/app_manager.c"
                               "./cute/pie_dialog_lvgl.c"
                               "./cute/nfc_popup.c"
+                              "./cute/nfc_tags.c"
+                              "./cute/time_sync.c"
                               "./cute/wireframe_clock_lvgl.c"
                               "./cute/baby_splash_screen.c"
                               "./cute/horloge_png.c"
@@ -27,6 +29,7 @@ idf_component_register(
                               "./cute/robot_png.c"
                               "./cute/musique_png.c"
                               "./cute/mp3_player_lvgl.c"
+                              "./cute/playlist_manager.c"
                               "./cute/music_implement.c"
                               
                                  

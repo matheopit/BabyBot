@@ -10,9 +10,10 @@
  *   - Controles : precedent / lecture-pause (bouton unique qui bascule
  *     d'icone) / suivant.
  *   - Reglage du son : icone haut-parleur (clic = mute/unmute) + slider.
- *   - Bouton "Parcourir" qui ouvre un explorateur modal de la carte SD
- *     (via <dirent.h> ou l'API lv_fs) : on entre dans les dossiers, ".."
- *     remonte, un clic sur un .mp3 le joue.
+ *   - Bouton "Parcourir" qui ouvre un explorateur modal de la carte SD :
+ *     on entre dans les dossiers, ".." remonte, un clic sur un .mp3 le joue.
+ *     La gestion des dossiers et de la playlist est dans playlist_manager.[ch]
+ *     (ce fichier ne fait que l'afficher).
  *   - Zone cliquable en bas de l'ecran : comportement LIBRE, non
  *     implemente ici -- juste un callback a enregistrer (voir
  *     mp3_player_set_bottom_click_cb), meme principe que
@@ -27,51 +28,22 @@
  * plus bas.
  * ============================================================
  *
- * CARTE SD : deux modes possibles, choisis via MP3_USE_POSIX_FS plus bas.
- *   - MP3_USE_POSIX_FS=1 (par defaut) : acces direct via <dirent.h>
- *     (opendir/readdir), chemin POSIX classique, ex "/sdcard". Adapte a
- *     une cible avec un vrai systeme de fichiers Linux (ex: iMX6ULL avec
- *     la carte SD montee sur /sdcard).
- *   - MP3_USE_POSIX_FS=0 : passe par l'API filesystem virtuelle de LVGL
- *     (lv_fs_dir_open/read), qui exige un prefixe "lettre de lecteur"
- *     enregistre via lv_fs_drv_register (ex: "S:/sdcard", pas juste
- *     "/sdcard"). Necessaire sur cible bare-metal (STM32 + FatFs) ou le
- *     systeme de fichiers ne passe pas par le noyau Linux.
+ * CARTE SD : les deux modes d'acces (<dirent.h> ou API lv_fs de LVGL) se
+ * choisissent dans playlist_manager.h (PLAYLIST_USE_POSIX_FS).
  */
 
+#include "app_manager.h"
 #include "draw_function.h"
 #include "lvgl.h"
 #include "pie_icons.h"
+#include "playlist_manager.h"
 #include <stdint.h>
 #include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <strings.h>
-
-#define MP3_USE_POSIX_FS                                                       \
-	1 /* 1 = <dirent.h> direct, 0 = lv_fs (lettre de lecteur) */
-
-#if MP3_USE_POSIX_FS
-#include <dirent.h>
-#endif
 
 #define SCREEN_W 240
 #define SCREEN_H 320
 
 #define WIRE_COLOR_HEX 0x4DA6FF
-
-#define SD_MUSIC_DIR                                                           \
-	"/sdcard" /* dossier scanne. En mode lv_fs                                 \
-			   * (MP3_USE_POSIX_FS=0), prefixer                                \
-			   * par la lettre de lecteur enregistree,                         \
-			   * ex: "S:/sdcard". */
-#define MAX_TRACKS 64
-#define MAX_BROWSE_ENTRIES 64 /* dossiers + .mp3 affiches par dossier */
-#define MAX_NAME_LEN 128	  /* nom d'une entree (sans le chemin) */
-#define MAX_PATH_LEN                                                           \
-	300 /* marge large : d_name peut faire                                     \
-		 * jusqu'a 255 caracteres selon la                                     \
-		 * libc, + prefixe SD_MUSIC_DIR + '/' */
 
 /* Empilement vertical des elements (haut -> bas), en offset depuis le
  * haut de l'ecran. A ajuster si vous changez la taille d'un element. */
@@ -91,7 +63,8 @@
 extern void audio_play_file(
 	const char *path);			/* charge et demarre la lecture d'un fichier */
 extern void audio_pause(void);	/* met en pause la lecture en cours */
-extern void audio_resume(void); /* reprend apres une pause */
+extern bool audio_resume(void); /* reprend apres une pause, false s'il n'y
+								   avait rien a reprendre */
 extern void audio_stop(void);	/* arrete completement la lecture */
 extern uint32_t
 audio_get_position_sec(void); /* position de lecture actuelle, en secondes */
@@ -100,16 +73,25 @@ extern uint32_t audio_get_duration_sec(
 extern void audio_set_volume(uint8_t percent); /* regle le volume, 0-100 */
 extern uint8_t audio_get_volume(
 	void); /* volume actuel, 0-100 (utilise a l'ouverture de l'ecran) */
+extern bool audio_is_finished(void); /* morceau en cours termine ou arrete */
+extern uint32_t audio_get_track_id(
+	void); /* identifiant du dernier morceau lance, par n'importe quel module */
+extern const char *audio_get_current_path(
+	void); /* chemin du dernier morceau lance ("" si aucun) */
 /* ======================================================================== */
 
 static lv_color_t wire_color;
 
 /* ---------- Etat du lecteur ---------- */
 
-static char track_paths[MAX_TRACKS][MAX_PATH_LEN];
-static uint32_t track_count = 0;
-static int32_t current_track_idx = -1;
 static bool is_playing = false;
+/* Morceau en cours dans le pipeline audio (audio_get_track_id) lors de la
+ * derniere synchro. Si l'identifiant change sans que ce soit nous (tag NFC,
+ * reveil...), on s'aligne dessus (player_sync_ui). */
+static uint32_t synced_track_id = 0;
+/* true si le morceau en cours a ete lance par ce lecteur : lui seul enchaine
+ * alors sur le suivant en fin de morceau (la popup NFC enchaine la sienne) */
+static bool player_owns_track = false;
 
 static lv_obj_t *title_label;
 static lv_obj_t *progress_bar;
@@ -130,17 +112,6 @@ static lv_obj_t *browse_panel = NULL;
 static lv_obj_t *browse_title_label = NULL;
 static lv_obj_t *browse_list_container = NULL;
 
-/* Explorateur : dossier affiche (garde entre deux ouvertures) et son
- * contenu. La playlist track_paths[] est remplie a partir de ce dossier
- * quand on lance un fichier. */
-typedef struct {
-	char name[MAX_NAME_LEN];
-	bool is_dir;
-} browse_entry_t;
-static char browse_dir[MAX_PATH_LEN] = SD_MUSIC_DIR;
-static browse_entry_t browse_entries[MAX_BROWSE_ENTRIES];
-static uint32_t browse_entry_count = 0;
-
 /* Zone cliquable libre, en bas de l'ecran : comportement non impose,
  * a brancher via mp3_player_set_bottom_click_cb(). */
 typedef void (*mp3_player_bottom_click_cb_t)(void);
@@ -152,21 +123,6 @@ static void format_mmss(uint32_t total_sec, char *buf, size_t buf_len) {
 	uint32_t m = total_sec / 60;
 	uint32_t s = total_sec % 60;
 	snprintf(buf, buf_len, "%02u:%02u", (unsigned)m, (unsigned)s);
-}
-
-/* Extrait le nom de fichier (sans le chemin) d'un chemin complet */
-static const char *path_basename(const char *path) {
-	const char *slash = strrchr(path, '/');
-	return slash ? slash + 1 : path;
-}
-
-static int has_mp3_extension(const char *fname) {
-	size_t len = strlen(fname);
-	if (len < 4)
-		return 0;
-	const char *ext = fname + len - 4;
-	return (ext[0] == '.' && (ext[1] == 'm' || ext[1] == 'M') &&
-			(ext[2] == 'p' || ext[2] == 'P') && (ext[3] == '3'));
 }
 
 /* ---------- Boutons de commande "fil de fer" (contour + symbole) ---------- */
@@ -203,16 +159,10 @@ static void update_play_pause_icon(void) {
 					  is_playing ? LV_SYMBOL_PAUSE : LV_SYMBOL_PLAY);
 }
 
-static void load_and_play_track(int32_t idx) {
-	if (idx < 0 || (uint32_t)idx >= track_count)
-		return;
-
-	current_track_idx = idx;
-	audio_play_file(track_paths[idx]);
-	is_playing = true;
-	update_play_pause_icon();
-
-	lv_label_set_text(title_label, path_basename(track_paths[idx]));
+/* Affiche le titre, la duree et remet la progression a zero pour le morceau
+ * en cours dans le pipeline audio */
+static void show_track_info(const char *path) {
+	lv_label_set_text(title_label, playlist_path_basename(path));
 
 	uint32_t duration = audio_get_duration_sec();
 	lv_bar_set_range(progress_bar, 0, (int32_t)(duration > 0 ? duration : 1));
@@ -225,20 +175,43 @@ static void load_and_play_track(int32_t idx) {
 	lv_label_set_text(time_total_label, buf);
 }
 
-static void play_next_track(void) {
-	if (track_count == 0)
+static void load_and_play_track(int32_t idx) {
+	const char *path = playlist_select(playlist_active(), idx);
+	if (path == NULL)
 		return;
-	int32_t next = (current_track_idx + 1) % (int32_t)track_count;
-	load_and_play_track(next);
+
+	audio_play_file(path);
+	synced_track_id = audio_get_track_id();
+	player_owns_track = true;
+	is_playing = true;
+	update_play_pause_icon();
+	show_track_info(path);
+}
+
+/* Aligne l'IHM sur le morceau en cours quand il n'a pas ete lance par ce
+ * lecteur (tag NFC, reveil...) : titre, duree, etat lecture/pause. La
+ * playlist, elle, est deja a jour pour un tag NFC (playlist_active). Appelee
+ * a l'entree sur l'ecran et par le timer. */
+static void player_sync_ui(void) {
+	uint32_t id = audio_get_track_id();
+	if (id == synced_track_id)
+		return;
+	synced_track_id = id;
+	player_owns_track = false;
+
+	is_playing = !audio_is_finished();
+	update_play_pause_icon();
+	/* Un morceau deja termine (son de demarrage...) ne remplace pas le titre */
+	if (is_playing)
+		show_track_info(audio_get_current_path());
+}
+
+static void play_next_track(void) {
+	load_and_play_track(playlist_next_index(playlist_active()));
 }
 
 static void play_prev_track(void) {
-	if (track_count == 0)
-		return;
-	int32_t prev = current_track_idx - 1;
-	if (prev < 0)
-		prev = (int32_t)track_count - 1;
-	load_and_play_track(prev);
+	load_and_play_track(playlist_prev_index(playlist_active()));
 }
 
 /* ---------- Callbacks des controles ---------- */
@@ -255,14 +228,18 @@ static void next_btn_event_cb(lv_event_t *e) {
 
 static void play_pause_btn_event_cb(lv_event_t *e) {
 	LV_UNUSED(e);
-	if (current_track_idx < 0)
+	if (audio_get_current_path()[0] == '\0')
 		return; /* aucun morceau charge */
 
 	if (is_playing) {
 		audio_pause();
 		is_playing = false;
+	} else if (!audio_resume()) {
+		/* Plus rien en pause (morceau termine, ou un autre son joue
+		 * entre-temps) : on relance le morceau courant */
+		load_and_play_track(playlist_current(playlist_active()));
+		return;
 	} else {
-		audio_resume();
 		is_playing = true;
 	}
 	update_play_pause_icon();
@@ -273,7 +250,8 @@ static void play_pause_btn_event_cb(lv_event_t *e) {
 
 static void ui_update_timer_cb(lv_timer_t *timer) {
 	LV_UNUSED(timer);
-	if (!is_playing || current_track_idx < 0)
+	player_sync_ui();
+	if (!is_playing)
 		return;
 
 	uint32_t pos = audio_get_position_sec();
@@ -285,9 +263,15 @@ static void ui_update_timer_cb(lv_timer_t *timer) {
 	format_mmss(pos, buf, sizeof(buf));
 	lv_label_set_text(time_elapsed_label, buf);
 
-	/* Fin de morceau -> passe automatiquement au suivant */
+	/* Fin de morceau -> passe automatiquement au suivant, sauf si c'est la
+	 * popup NFC qui enchaine sa propre playlist */
 	if (dur > 0 && pos >= dur) {
-		play_next_track();
+		if (player_owns_track) {
+			play_next_track();
+		} else if (audio_is_finished()) {
+			is_playing = false;
+			update_play_pause_icon();
+		}
 	}
 }
 
@@ -318,148 +302,36 @@ static void browse_close_btn_event_cb(lv_event_t *e) {
 	browse_modal_close();
 }
 
-static bool browse_at_root(void) {
-	return strcmp(browse_dir, SD_MUSIC_DIR) == 0;
-}
-
-/* Ajoute une entree (dossier ou .mp3) ; ignore les fichiers caches, le
- * dossier settings a la racine et les noms trop longs */
-static void browse_add_entry(const char *name, bool is_dir) {
-	if (browse_entry_count >= MAX_BROWSE_ENTRIES)
-		return;
-	if (name[0] == '.' || strcmp(name, "System Volume Information") == 0)
-		return;
-	if (!is_dir && !has_mp3_extension(name))
-		return;
-	/* Dossier de configuration (config.json...), pas de musique dedans */
-	if (is_dir && browse_at_root() && strcasecmp(name, "settings") == 0)
-		return;
-	if (strlen(name) >= MAX_NAME_LEN) {
-		printf("mp3_player: nom trop long, ignore: %s\n", name);
-		return;
-	}
-	strcpy(browse_entries[browse_entry_count].name, name);
-	browse_entries[browse_entry_count].is_dir = is_dir;
-	browse_entry_count++;
-}
-
-/* Dossiers d'abord, puis fichiers, chacun par ordre alphabetique */
-static int browse_entry_cmp(const void *a, const void *b) {
-	const browse_entry_t *ea = a;
-	const browse_entry_t *eb = b;
-	if (ea->is_dir != eb->is_dir)
-		return ea->is_dir ? -1 : 1;
-	return strcasecmp(ea->name, eb->name);
-}
-
-/* Liste le contenu de browse_dir dans browse_entries[]. Deux
- * implementations selon MP3_USE_POSIX_FS (voir commentaire en tete de
- * fichier). Retourne false si le dossier ne peut pas etre ouvert. */
-static bool scan_browse_dir(void) {
-	browse_entry_count = 0;
-
-#if MP3_USE_POSIX_FS
-	DIR *dir = opendir(browse_dir);
-	if (dir == NULL) {
-		printf("mp3_player: impossible d'ouvrir %s (opendir a echoue - "
-			   "verifier que la carte SD est bien montee a cet endroit)\n",
-			   browse_dir);
-		return false;
-	}
-
-	struct dirent *entry;
-	while ((entry = readdir(dir)) != NULL)
-		browse_add_entry(entry->d_name, entry->d_type == DT_DIR);
-	closedir(dir);
-
-#else
-	lv_fs_dir_t dir;
-	lv_fs_res_t res = lv_fs_dir_open(&dir, browse_dir);
-	if (res != LV_FS_RES_OK) {
-		printf("mp3_player: impossible d'ouvrir %s (res=%d) - verifier que "
-			   "le chemin commence bien par la lettre de lecteur enregistree "
-			   "(ex: 'S:/sdcard', pas juste '/sdcard')\n",
-			   browse_dir, (int)res);
-		return false;
-	}
-
-	char fname[256];
-	while (1) {
-		res = lv_fs_dir_read(&dir, fname);
-		if (res != LV_FS_RES_OK || fname[0] == '\0')
-			break;
-		/* lv_fs prefixe les noms de dossiers par '/' */
-		if (fname[0] == '/')
-			browse_add_entry(fname + 1, true);
-		else
-			browse_add_entry(fname, false);
-	}
-	lv_fs_dir_close(&dir);
-#endif
-
-	qsort(browse_entries, browse_entry_count, sizeof(browse_entries[0]),
-		  browse_entry_cmp);
-	return true;
-}
-
-/* La playlist (precedent/suivant) devient la liste des .mp3 du dossier
- * affiche ; lance ensuite le fichier choisi */
-static void browse_play_file(uint32_t entry_idx) {
-	int32_t play_idx = -1;
-	track_count = 0;
-	for (uint32_t i = 0; i < browse_entry_count && track_count < MAX_TRACKS;
-		 i++) {
-		if (browse_entries[i].is_dir)
-			continue;
-		int written = snprintf(track_paths[track_count], MAX_PATH_LEN, "%s/%s",
-							   browse_dir, browse_entries[i].name);
-		if (written < 0 || (size_t)written >= MAX_PATH_LEN)
-			continue; /* chemin trop long : fichier ignore */
-		if (i == entry_idx)
-			play_idx = (int32_t)track_count;
-		track_count++;
-	}
-	load_and_play_track(play_idx);
-}
-
-static void browse_refresh(void);
+/* Reconstruit le titre et la liste a partir de l'etat de playlist_manager */
+static void browse_update_ui(void);
 
 static void browse_row_event_cb(lv_event_t *e) {
 	if (lv_event_get_code(e) != LV_EVENT_CLICKED)
 		return;
 	uint32_t idx = (uint32_t)(uintptr_t)lv_event_get_user_data(e);
-	if (idx >= browse_entry_count)
+	const playlist_entry_t *entry = playlist_browse_entry(idx);
+	if (entry == NULL)
 		return;
 
-	if (!browse_entries[idx].is_dir) {
-		browse_play_file(idx);
+	if (!entry->is_dir) {
+		/* La playlist devient les .mp3 du dossier affiche, puis on lance le
+		 * fichier choisi */
+		load_and_play_track(playlist_set_from_browse(playlist_active(), idx));
 		browse_modal_close();
 		return;
 	}
 
-	size_t len = strlen(browse_dir);
-	if (len + 1 + strlen(browse_entries[idx].name) >= MAX_PATH_LEN) {
-		printf("mp3_player: chemin trop long: %s/%s\n", browse_dir,
-			   browse_entries[idx].name);
-		return;
-	}
-	snprintf(browse_dir + len, MAX_PATH_LEN - len, "/%s",
-			 browse_entries[idx].name);
-	browse_refresh();
+	if (playlist_browse_enter(idx))
+		browse_update_ui();
 }
 
 static void browse_parent_event_cb(lv_event_t *e) {
 	if (lv_event_get_code(e) != LV_EVENT_CLICKED)
 		return;
-	if (browse_at_root())
+	if (playlist_browse_at_root())
 		return;
-	char *slash = strrchr(browse_dir, '/');
-	if (slash != NULL)
-		*slash = '\0';
-	/* ne jamais remonter au-dessus de SD_MUSIC_DIR */
-	if (strlen(browse_dir) < strlen(SD_MUSIC_DIR))
-		strcpy(browse_dir, SD_MUSIC_DIR);
-	browse_refresh();
+	playlist_browse_parent();
+	browse_update_ui();
 }
 
 static void browse_row_create(lv_obj_t *list_container, const char *symbol,
@@ -493,11 +365,12 @@ static void browse_row_create(lv_obj_t *list_container, const char *symbol,
 }
 
 static void build_browse_rows(lv_obj_t *list_container) {
-	if (!browse_at_root())
+	if (!playlist_browse_at_root())
 		browse_row_create(list_container, LV_SYMBOL_UP, "..",
 						  browse_parent_event_cb, 0);
 
-	if (browse_entry_count == 0) {
+	uint32_t count = playlist_browse_count();
+	if (count == 0) {
 		lv_obj_t *empty_lbl = lv_label_create(list_container);
 		lv_label_set_text(empty_lbl, "Aucun dossier ni fichier .mp3");
 		lv_obj_set_width(empty_lbl, lv_pct(100));
@@ -507,28 +380,17 @@ static void build_browse_rows(lv_obj_t *list_container) {
 		return;
 	}
 
-	for (uint32_t i = 0; i < browse_entry_count; i++) {
+	for (uint32_t i = 0; i < count; i++) {
+		const playlist_entry_t *entry = playlist_browse_entry(i);
 		browse_row_create(list_container,
-						  browse_entries[i].is_dir ? LV_SYMBOL_DIRECTORY
-												   : LV_SYMBOL_AUDIO,
-						  browse_entries[i].name, browse_row_event_cb, i);
+						  entry->is_dir ? LV_SYMBOL_DIRECTORY : LV_SYMBOL_AUDIO,
+						  entry->name, browse_row_event_cb, i);
 	}
 }
 
-/* Relit le dossier courant et reconstruit la liste. Si le dossier n'existe
- * plus (carte changee...), on revient a la racine. */
-static void browse_refresh(void) {
-	if (!scan_browse_dir() && !browse_at_root()) {
-		strcpy(browse_dir, SD_MUSIC_DIR);
-		scan_browse_dir();
-	}
-
-	if (browse_title_label != NULL) {
-		if (browse_at_root())
-			lv_label_set_text(browse_title_label, "Carte SD");
-		else
-			lv_label_set_text(browse_title_label, path_basename(browse_dir));
-	}
+static void browse_update_ui(void) {
+	if (browse_title_label != NULL)
+		lv_label_set_text(browse_title_label, playlist_browse_title());
 
 	if (browse_list_container != NULL) {
 		lv_obj_clean(browse_list_container);
@@ -587,8 +449,9 @@ static void browse_open(lv_obj_t *parent_scr) {
 	lv_obj_set_scroll_dir(browse_list_container, LV_DIR_VER);
 	lv_obj_set_scrollbar_mode(browse_list_container, LV_SCROLLBAR_MODE_AUTO);
 
-	/* Rouvre sur le dernier dossier visite */
-	browse_refresh();
+	/* Rouvre sur le dernier dossier visite (relu, il a pu changer) */
+	playlist_browse_refresh();
+	browse_update_ui();
 }
 
 static void browse_btn_event_cb(lv_event_t *e) {
@@ -620,6 +483,14 @@ static void volume_slider_event_cb(lv_event_t *e) {
 	update_volume_icon(v);
 	if (v > 0)
 		volume_before_mute = v;
+}
+
+/* Slider relache : sauvegarde du volume dans config.json (une seule
+ * ecriture SD par reglage, pas a chaque pas du glissement) */
+static void volume_slider_released_cb(lv_event_t *e) {
+	if (lv_event_get_code(e) != LV_EVENT_RELEASED)
+		return;
+	app_manager_set_volume((uint8_t)lv_slider_get_value(volume_slider), true);
 }
 
 /* Clic sur l'icone haut-parleur : bascule mute / dernier volume connu */
@@ -769,6 +640,8 @@ void mp3_player_create(lv_obj_t *scr) {
 							 LV_PART_KNOB); /* taille de la poignee */
 	lv_obj_add_event_cb(volume_slider, volume_slider_event_cb,
 						LV_EVENT_VALUE_CHANGED, NULL);
+	lv_obj_add_event_cb(volume_slider, volume_slider_released_cb,
+						LV_EVENT_RELEASED, NULL);
 
 	uint8_t initial_vol = audio_get_volume();
 	lv_slider_set_value(volume_slider, initial_vol, LV_ANIM_OFF);
@@ -857,6 +730,9 @@ void show_player() {
 		mp3_player_create(player_screen);
 		mp3_player_set_bottom_click_cb(on_bottom_zone_clicked);
 	}
+	/* Une musique a pu etre lancee ailleurs (tag NFC) depuis la derniere
+	 * visite : on remet l'ecran a jour avant de l'afficher */
+	player_sync_ui();
 	lv_scr_load(player_screen);
 }
 
@@ -873,7 +749,7 @@ void show_player() {
  *   mp3_player_set_bottom_click_cb(on_bottom_zone_clicked);
  *
  * Au clic sur "Parcourir", l'explorateur s'ouvre sur le dernier dossier
- * visite (SD_MUSIC_DIR au depart) ; un dossier s'ouvre au clic, ".."
+ * visite (PLAYLIST_ROOT_DIR au depart) ; un dossier s'ouvre au clic, ".."
  * remonte, un .mp3 lance la lecture. Les boutons precedent/suivant
  * naviguent parmi les .mp3 du dossier du morceau lance.
  * Le slider regle le volume (0-100) ; cliquer sur l'icone haut-parleur

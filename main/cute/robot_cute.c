@@ -2,6 +2,7 @@
 #include "hal/lv_hal_disp.h"
 #include "lvgl.h"
 
+#include "PCM5101.h"
 #include "app_manager.h"
 #include "draw_function.h"
 #include "robot_face.h"
@@ -186,6 +187,120 @@ void robot_update_mood(void) {
 		robot_refresh_eyes();
 }
 
+/* Bouton « Arrêter le réveil » (police sans accents), au milieu de l'écran pendant la sonnerie */
+static lv_obj_t *alarm_btn = NULL;
+
+static void alarm_btn_event_cb(lv_event_t *e) {
+	if (lv_event_get_code(e) != LV_EVENT_CLICKED)
+		return;
+	app_manager_alarm_stop();
+}
+
+static void alarm_btn_create(void) {
+	lv_color_t color = lv_color_hex(COLOR_MAIN);
+
+	alarm_btn = lv_btn_create(robot_screen);
+	lv_obj_remove_style_all(alarm_btn);
+	lv_obj_set_size(alarm_btn, 180, 70);
+	lv_obj_align(alarm_btn, LV_ALIGN_CENTER, 0, 0);
+	lv_obj_set_style_radius(alarm_btn, 8, 0);
+	lv_obj_set_style_border_width(alarm_btn, 2, 0);
+	lv_obj_set_style_border_color(alarm_btn, color, 0);
+	lv_obj_set_style_bg_color(alarm_btn, lv_color_black(), 0);
+	lv_obj_set_style_bg_opa(alarm_btn, LV_OPA_COVER, 0);
+	lv_obj_set_style_bg_color(alarm_btn, color, LV_STATE_PRESSED);
+	lv_obj_set_style_bg_opa(alarm_btn, LV_OPA_40, LV_STATE_PRESSED);
+	lv_obj_add_event_cb(alarm_btn, alarm_btn_event_cb, LV_EVENT_CLICKED,
+						NULL);
+
+	lv_obj_t *lbl = lv_label_create(alarm_btn);
+	lv_label_set_text(lbl, LV_SYMBOL_BELL "\nArreter le reveil");
+	lv_obj_set_style_text_color(lbl, color, 0);
+	lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, 0);
+	lv_obj_center(lbl);
+}
+
+void robot_alarm_update(void) {
+	if (!robot_screen)
+		return;
+	bool ringing = app_manager_alarm_ringing();
+	if (ringing && !alarm_btn) {
+		alarm_btn_create();
+	} else if (!ringing && alarm_btn) {
+		lv_obj_del(alarm_btn);
+		alarm_btn = NULL;
+	}
+}
+
+/* --- Notes de musique qui défilent pendant la lecture --- */
+#define NOTE_MAX 8			/* nombre max de notes affichées en même temps */
+#define NOTE_END_Y (-40)	/* la note disparaît au-dessus de l'écran */
+
+/* Calque transparent des notes : au-dessus des yeux, sous les mains */
+static lv_obj_t *notes_layer = NULL;
+
+/* Fait monter la note en oscillant, puis la fait disparaître en fondu
+ * v : progression de 0 à 1000 */
+static void note_anim_cb(void *var, int32_t v) {
+	lv_obj_t *note = var;
+	int32_t start_y = lv_disp_get_ver_res(NULL);
+	int32_t base_x = (int32_t)(intptr_t)lv_obj_get_user_data(note);
+	/* Oscillation gauche/droite de ±12 px (2 périodes sur le trajet) */
+	int32_t sway = (lv_trigo_sin((int16_t)((v * 720 / 1000) % 360)) * 12) / 32768;
+	int32_t y = start_y - v * (start_y - NOTE_END_Y) / 1000;
+
+	lv_obj_set_pos(note, base_x + sway, y);
+	/* Pleine opacité sur les 70 premiers %, fondu sur le reste */
+	lv_opa_t opa = (v < 700) ? LV_OPA_COVER : (lv_opa_t)((1000 - v) * 255 / 300);
+	lv_obj_set_style_text_opa(note, opa, 0);
+}
+
+/* Fin du trajet : supprime la note (en différé, on est dans son animation) */
+static void note_anim_ready_cb(lv_anim_t *a) { lv_obj_del_async(a->var); }
+
+/* Crée une note à une position, une taille et une couleur aléatoires */
+static void note_spawn(void) {
+	static const uint32_t colors[] = {COLOR_MAIN, 0xFFD24D, 0xFF7AC8, 0x7CFFB2,
+									  0xFFFFFF};
+	lv_obj_t *note = lv_label_create(notes_layer);
+	bool big = lv_rand(0, 1);
+
+	lv_label_set_text(note, LV_SYMBOL_AUDIO);
+	lv_obj_set_style_text_font(
+		note, big ? &lv_font_montserrat_32 : &lv_font_montserrat_16, 0);
+	lv_obj_set_style_text_color(
+		note, lv_color_hex(colors[lv_rand(0, sizeof(colors) / sizeof(colors[0]) - 1)]),
+		0);
+	/* Abscisse de base mémorisée pour l'oscillation (marge pour ±12 px) */
+	int32_t max_x = lv_disp_get_hor_res(NULL) - 50;
+	lv_obj_set_user_data(note, (void *)(intptr_t)lv_rand(15, max_x));
+
+	lv_anim_t a;
+	lv_anim_init(&a);
+	lv_anim_set_var(&a, note);
+	lv_anim_set_exec_cb(&a, note_anim_cb);
+	lv_anim_set_ready_cb(&a, note_anim_ready_cb);
+	lv_anim_set_values(&a, 0, 1000);
+	lv_anim_set_time(&a, lv_rand(3000, 5000));
+	lv_anim_set_path_cb(&a, lv_anim_path_linear);
+	lv_anim_start(&a);
+	/* Position initiale (sous l'écran) avant le premier pas d'animation */
+	note_anim_cb(note, 0);
+}
+
+/* Toutes les 250 à 700 ms (durée tirée au hasard), fait apparaître une note
+ * si l'écran robot est affiché et qu'une musique est en cours de lecture */
+static void notes_timer_cb(lv_timer_t *timer) {
+	lv_timer_set_period(timer, lv_rand(250, 700));
+	if (!robot_screen || lv_scr_act() != robot_screen)
+		return;
+	if (audio_player_get_state() != AUDIO_PLAYER_STATE_PLAYING)
+		return;
+	if (lv_obj_get_child_cnt(notes_layer) >= NOTE_MAX)
+		return;
+	note_spawn();
+}
+
 void draw_robot() {
 
 	if (!robot_screen) {
@@ -205,11 +320,21 @@ void draw_robot() {
 		eyes_mood = app_manager_get_mood();
 		create_robot_square_eyes_with_blink(eyes_layer);
 
+		/* Calque des notes de musique (sous les mains et la zone de clic) */
+		notes_layer = lv_obj_create(robot_screen);
+		lv_obj_remove_style_all(notes_layer);
+		lv_obj_set_size(notes_layer, LV_PCT(100), LV_PCT(100));
+		lv_obj_clear_flag(notes_layer,
+						  LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+		lv_timer_create(notes_timer_cb, 500, NULL);
+
 		/* Mains et zone de clic : créées une seule fois */
 		create_robot_hand(robot_screen);
 		create_full_click_zone(robot_screen);
 	} else {
 		robot_refresh_eyes();
 	}
+	/* Créé après la zone de clic pour être au-dessus */
+	robot_alarm_update();
 	lv_scr_load(robot_screen);
 }

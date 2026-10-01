@@ -1,5 +1,5 @@
 #include "Wireless.h"
-#include "app_manager.h"
+#include "time_sync.h"
 uint16_t BLE_NUM = 0;
 uint16_t WIFI_NUM = 0;
 bool Scan_finish = 0;
@@ -44,7 +44,7 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
 	if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
 		ip_event_got_ip_t *event = (ip_event_got_ip_t *)event_data;
 		printf("WiFi: Got IP: " IPSTR "\n", IP2STR(&event->ip_info.ip));
-		app_manager_setup_time();
+		time_sync_start();
 	}
 }
 
@@ -71,8 +71,11 @@ void WIFI_Init(void *arg) {
 
 	vTaskDelete(NULL);
 }
-// Coupe le WiFi pour économiser la batterie (heure déjà synchronisée)
+// Coupe le WiFi pour économiser la batterie (heure obtenue ou abandonnée)
+// (sans effet si déjà arrêté)
 void WIFI_Stop(void) {
+	if (wifi_stopping)
+		return;
 	wifi_stopping = true;
 	esp_wifi_disconnect();
 	esp_wifi_stop();
