@@ -18,6 +18,8 @@ static volatile bool s_track_finished = false;
 static uint32_t s_duration_sec = 0;
 // Incrémenté à chaque morceau lancé (voir Music_Track_Id)
 static uint32_t s_track_id = 0;
+// Chemin du dernier morceau lancé (voir Music_Current_Path)
+static char s_current_path[300] = "";
 // static esp_err_t bsp_i2s_write(void *audio_buffer, size_t len, size_t
 // *bytes_written, uint32_t timeout_ms) {                     // I2S Write Init
 //     return i2s_channel_write(i2s_tx_chan, (char *)audio_buffer, len,
@@ -282,6 +284,7 @@ void Play_Music_ex(const char *filePath) {
 		ESP_LOGE(TAG, "Failed to open MP3 file: %s", filePath);
 		return;
 	}
+	snprintf(s_current_path, sizeof(s_current_path), "%s", filePath);
 	Music_track_start(Music_File);
 	expected_event = AUDIO_PLAYER_CALLBACK_EVENT_PLAYING;
 	esp_err_t ret = audio_player_play(Music_File);
@@ -314,6 +317,7 @@ void Play_Music(const char *directory, const char *fileName) {
 		ESP_LOGE(TAG, "Failed to open MP3 file: %s", filePath);
 		return;
 	}
+	snprintf(s_current_path, sizeof(s_current_path), "%s", filePath);
 	Music_track_start(Music_File);
 
 	expected_event = AUDIO_PLAYER_CALLBACK_EVENT_PLAYING;
@@ -402,6 +406,10 @@ bool Music_Finished(void) { return s_track_finished; }
 // Identifiant du dernier morceau lancé : permet de savoir si un autre
 // module a lancé un morceau entre-temps
 uint32_t Music_Track_Id(void) { return s_track_id; }
+
+// Chemin du dernier morceau lancé (chaîne vide si aucun), quel que soit le
+// module qui l'a lancé (lecteur, tag NFC, réveil)
+const char *Music_Current_Path(void) { return s_current_path; }
 
 void Volume_adjustment(uint8_t Vol) {
 	if (Vol > Volume_MAX)
