@@ -261,7 +261,7 @@ void app_manager_start(void) {
 	Volume_adjustment(app_manager_get_volume());
 	app_started = true;
 	app_manager_choose_frame(FRAME_SMILE);
-	xTaskCreatePinnedToCore(nfc_task, "NFC task", 4096, NULL, 4, NULL, 1);
+	xTaskCreatePinnedToCore(nfc_task, "NFC task", 4096, NULL, 4, NULL, 0);
 }
 
 bool app_manager_is_started(void) { return app_started; }
