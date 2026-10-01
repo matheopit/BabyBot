@@ -5,6 +5,7 @@
 #include "ST7789.h"
 #include "Wireless.h"
 #include "app_manager.h"
+#include "fw_update.h"
 #include "time_sync.h"
 #include <time.h>
 QueueHandle_t app_msg_queue;
@@ -41,6 +42,10 @@ void app_main(void) {
 	LCD_Init();
 	Audio_Init();
 	LVGL_Init(); // returns the screen object
+
+	// Firmware en attente sur la SD : on le flashe et on redémarre dessus
+	if (fw_update_pending())
+		fw_update_apply_from_sd();
 
 	/********************* Demo *********************/
 	app_manager_init();

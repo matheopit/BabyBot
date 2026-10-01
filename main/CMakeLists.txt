@@ -22,6 +22,7 @@ idf_component_register(
                               "./cute/nfc_popup.c"
                               "./cute/nfc_tags.c"
                               "./cute/time_sync.c"
+                              "./cute/fw_update.c"
                               "./cute/wireframe_clock_lvgl.c"
                               "./cute/baby_splash_screen.c"
                               "./ressources/horloge_png.c"
