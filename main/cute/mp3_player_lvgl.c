@@ -79,6 +79,7 @@ static lv_color_t wire_color;
 
 /* ---------- Etat du lecteur ---------- */
 
+static playlist_t playlist = PLAYLIST_INITIALIZER;
 static bool is_playing = false;
 
 static lv_obj_t *title_label;
@@ -148,7 +149,7 @@ static void update_play_pause_icon(void) {
 }
 
 static void load_and_play_track(int32_t idx) {
-	const char *path = playlist_select(idx);
+	const char *path = playlist_select(&playlist, idx);
 	if (path == NULL)
 		return;
 
@@ -170,11 +171,11 @@ static void load_and_play_track(int32_t idx) {
 }
 
 static void play_next_track(void) {
-	load_and_play_track(playlist_next_index());
+	load_and_play_track(playlist_next_index(&playlist));
 }
 
 static void play_prev_track(void) {
-	load_and_play_track(playlist_prev_index());
+	load_and_play_track(playlist_prev_index(&playlist));
 }
 
 /* ---------- Callbacks des controles ---------- */
@@ -191,7 +192,7 @@ static void next_btn_event_cb(lv_event_t *e) {
 
 static void play_pause_btn_event_cb(lv_event_t *e) {
 	LV_UNUSED(e);
-	if (playlist_current() < 0)
+	if (playlist_current(&playlist) < 0)
 		return; /* aucun morceau charge */
 
 	if (is_playing) {
@@ -200,7 +201,7 @@ static void play_pause_btn_event_cb(lv_event_t *e) {
 	} else if (!audio_resume()) {
 		/* Plus rien en pause (morceau termine, ou un autre son joue
 		 * entre-temps) : on relance le morceau courant */
-		load_and_play_track(playlist_current());
+		load_and_play_track(playlist_current(&playlist));
 		return;
 	} else {
 		is_playing = true;
@@ -213,7 +214,7 @@ static void play_pause_btn_event_cb(lv_event_t *e) {
 
 static void ui_update_timer_cb(lv_timer_t *timer) {
 	LV_UNUSED(timer);
-	if (!is_playing || playlist_current() < 0)
+	if (!is_playing || playlist_current(&playlist) < 0)
 		return;
 
 	uint32_t pos = audio_get_position_sec();
@@ -272,7 +273,7 @@ static void browse_row_event_cb(lv_event_t *e) {
 	if (!entry->is_dir) {
 		/* La playlist devient les .mp3 du dossier affiche, puis on lance le
 		 * fichier choisi */
-		load_and_play_track(playlist_set_from_browse(idx));
+		load_and_play_track(playlist_set_from_browse(&playlist, idx));
 		browse_modal_close();
 		return;
 	}

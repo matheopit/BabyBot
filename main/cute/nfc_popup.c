@@ -19,12 +19,9 @@
 #include "app_manager.h"
 #include "esp_log.h"
 #include "lvgl.h"
-#include <dirent.h>
+#include "playlist_manager.h"
 #include <stdbool.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <strings.h>
 
 static const char *TAG = "NFC_POPUP";
 
@@ -33,7 +30,6 @@ static const char *TAG = "NFC_POPUP";
 #define POPUP_BTN_W 80
 #define POPUP_BTN_H 50
 
-#define PLAYLIST_MAX 64
 #define PLAYLIST_CHECK_MS 500
 
 static lv_obj_t *popup_bg = NULL;
@@ -41,60 +37,30 @@ static char popup_path[ALARM_SOUND_PATH_LEN];
 static bool popup_is_dir = false;
 static bool music_playing = false; // musique lancée par « Jouer »
 
-// Playlist d'un répertoire : morceaux triés, enchaînés par playlist_timer
-static char playlist[PLAYLIST_MAX][ALARM_SOUND_PATH_LEN];
-static int playlist_count = 0;
-static int playlist_idx = 0;
+// Playlist d'un répertoire : morceaux triés (playlist_manager), enchaînés par
+// playlist_timer
+static playlist_t playlist = PLAYLIST_INITIALIZER;
 static uint32_t playlist_track_id = 0; // Music_Track_Id() du morceau lancé
 static lv_timer_t *playlist_timer = NULL;
-
-static bool has_mp3_extension(const char *fname) {
-	const char *dot = strrchr(fname, '.');
-	return dot != NULL && dot != fname && strcasecmp(dot, ".mp3") == 0;
-}
-
-static int playlist_cmp(const void *a, const void *b) {
-	return strcasecmp((const char *)a, (const char *)b);
-}
-
-// Remplit playlist[] avec les .mp3 de dir_path, triés par nom
-static void playlist_scan(const char *dir_path) {
-	playlist_count = 0;
-	DIR *dir = opendir(dir_path);
-	if (dir == NULL) {
-		ESP_LOGE(TAG, "Impossible d'ouvrir %s", dir_path);
-		return;
-	}
-
-	struct dirent *entry;
-	while (playlist_count < PLAYLIST_MAX && (entry = readdir(dir)) != NULL) {
-		if (entry->d_name[0] == '.' || !has_mp3_extension(entry->d_name))
-			continue;
-		int written = snprintf(playlist[playlist_count], ALARM_SOUND_PATH_LEN,
-							   "%s/%s", dir_path, entry->d_name);
-		if (written < 0 || written >= ALARM_SOUND_PATH_LEN) {
-			ESP_LOGW(TAG, "Chemin trop long, ignoré : %s", entry->d_name);
-			continue;
-		}
-		playlist_count++;
-	}
-	closedir(dir);
-	qsort(playlist, playlist_count, sizeof(playlist[0]), playlist_cmp);
-}
 
 static void playlist_stop(void) {
 	if (playlist_timer != NULL) {
 		lv_timer_del(playlist_timer);
 		playlist_timer = NULL;
 	}
-	playlist_count = 0;
+	playlist_clear(&playlist);
 }
 
-static void playlist_play_current(void) {
-	ESP_LOGI(TAG, "Playlist %d/%d : %s", playlist_idx + 1, playlist_count,
-			 playlist[playlist_idx]);
-	Play_Music_ex(playlist[playlist_idx]);
+// Joue le morceau idx de la playlist ; false s'il n'existe pas (fin)
+static bool playlist_play(int32_t idx) {
+	const char *path = playlist_select(&playlist, idx);
+	if (path == NULL)
+		return false;
+	ESP_LOGI(TAG, "Playlist %d/%u : %s", (int)idx + 1,
+			 (unsigned)playlist_count(&playlist), path);
+	Play_Music_ex(path);
 	playlist_track_id = Music_Track_Id();
+	return true;
 }
 
 // Passe au morceau suivant quand le précédent est fini ; s'arrête à la fin
@@ -109,24 +75,24 @@ static void playlist_timer_cb(lv_timer_t *timer) {
 	}
 	if (!Music_Finished())
 		return;
-	if (++playlist_idx >= playlist_count) {
+	if (!playlist_play(playlist_current(&playlist) + 1)) {
 		ESP_LOGI(TAG, "Fin de la playlist");
 		playlist_stop();
 		music_playing = false;
-		return;
 	}
-	playlist_play_current();
 }
 
 static void playlist_start(const char *dir_path) {
 	playlist_stop();
-	playlist_scan(dir_path);
-	if (playlist_count == 0) {
+	if (!playlist_load_dir(&playlist, dir_path)) {
+		ESP_LOGE(TAG, "Impossible d'ouvrir %s", dir_path);
+		return;
+	}
+	if (playlist_count(&playlist) == 0) {
 		ESP_LOGW(TAG, "Aucun .mp3 dans %s", dir_path);
 		return;
 	}
-	playlist_idx = 0;
-	playlist_play_current();
+	playlist_play(0);
 	music_playing = true;
 	playlist_timer =
 		lv_timer_create(playlist_timer_cb, PLAYLIST_CHECK_MS, NULL);
