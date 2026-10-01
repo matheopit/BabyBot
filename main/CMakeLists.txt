@@ -29,6 +29,7 @@ idf_component_register(
                               "./cute/robot_png.c"
                               "./cute/musique_png.c"
                               "./cute/mp3_player_lvgl.c"
+                              "./cute/playlist_manager.c"
                               "./cute/music_implement.c"
                               
                                  
