@@ -15,6 +15,8 @@ QueueHandle_t app_msg_queue;
 // Délai après lequel on renonce à l'heure et on coupe le Wi-Fi pour ne pas
 // vider la batterie (le réveil ne fonctionnera pas sans heure)
 #define WIFI_GIVE_UP_MS (5 * 60 * 1000)
+// Joue startup.mp3 au démarrage (0 = désactivé)
+#define PLAY_STARTUP_SOUND 0
 
 void Driver_Loop(void *parameter) {
 	Wireless_Init();
@@ -47,8 +49,10 @@ void app_main(void) {
 	lv_refr_now(NULL);
 	vTaskDelay(pdMS_TO_TICKS(20)); // fin du dernier transfert DMA
 	LCD_Display_On();
+#if PLAY_STARTUP_SOUND
 	Volume_adjustment(10); // volume fixe pour le son de démarrage
 	Play_Music("/sdcard", "startup.mp3");
+#endif
 	Driver_Init();
 
 	const TickType_t boot_tick = xTaskGetTickCount();

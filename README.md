@@ -149,7 +149,7 @@ main/
 
 Le code est formaté avec `clang-format` (`.clang-format` à la racine). Les
 pilotes tiers (`esp_lcd_touch`, `Vernon_ST7789T`) et les images générées
-(`*_png.c`) ne sont pas reformatés. Le commit de formatage est listé dans
+(`ressources/*_png.c`) ne sont pas reformatés. Le commit de formatage est listé dans
 `.git-blame-ignore-revs` :
 
 ```bash

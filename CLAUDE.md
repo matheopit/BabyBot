@@ -46,6 +46,6 @@ idf.py -p /dev/ttyACM0 flash monitor
 
 Prototypes for several of these are in `draw_function.h`. Touching anywhere opens the circular menu `pie_dialog_lvgl.c` (`pie_dialog_open`), which calls `app_manager_choose_frame`. To add a screen: add a `FRAME_*` enum value, add a case in `app_manager_choose_frame`, and add an entry in the pie menu.
 
-`*_png.c` files (`robot_png.c`, `horloge_png.c`, …) are generated LVGL image arrays (menu icons, declared in `pie_icons.h`). Do not edit them by hand.
+`main/ressources/*_png.c` files (`robot_png.c`, `horloge_png.c`, …) are generated LVGL image arrays (menu icons, declared in `pie_icons.h`). Do not edit them by hand.
 
 **Audio**: `PCM5101.c` wraps `esp-audio-player`: `Play_Music(dir, file)`, `Play_Music_ex(path)`, `Music_stop/pause/resume` and `Volume_adjustment`.
