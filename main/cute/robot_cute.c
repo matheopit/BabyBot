@@ -2,6 +2,7 @@
 #include "hal/lv_hal_disp.h"
 #include "lvgl.h"
 
+#include "BAT_Driver.h"
 #include "PCM5101.h"
 #include "app_manager.h"
 #include "draw_function.h"
@@ -301,6 +302,55 @@ static void notes_timer_cb(lv_timer_t *timer) {
 	note_spawn();
 }
 
+/* --- Indicateur de batterie (en bas à droite) --- */
+#define BAT_REFRESH_MS 5000 /* rafraîchissement du pourcentage */
+#define COLOR_BAT_LOW 0xFFA500
+#define COLOR_BAT_CRITICAL 0xFF3030
+
+static lv_obj_t *bat_label = NULL;
+
+/* Met à jour l'icône, le pourcentage et la couleur de l'indicateur */
+void robot_battery_update(void) {
+	if (!bat_label)
+		return;
+	if (!BAT_Is_Valid()) {
+		lv_label_set_text(bat_label, LV_SYMBOL_BATTERY_EMPTY " --%");
+		lv_obj_set_style_text_color(bat_label, lv_palette_main(LV_PALETTE_GREY),
+									0);
+		return;
+	}
+	uint8_t pct = BAT_Get_Percent();
+	const char *icon = pct > 80   ? LV_SYMBOL_BATTERY_FULL
+					   : pct > 55 ? LV_SYMBOL_BATTERY_3
+					   : pct > 30 ? LV_SYMBOL_BATTERY_2
+					   : pct > 10 ? LV_SYMBOL_BATTERY_1
+								  : LV_SYMBOL_BATTERY_EMPTY;
+	uint32_t color;
+	switch (BAT_Get_State()) {
+	case BAT_STATE_CRITICAL:
+		color = COLOR_BAT_CRITICAL;
+		break;
+	case BAT_STATE_LOW:
+		color = COLOR_BAT_LOW;
+		break;
+	default:
+		color = COLOR_MAIN;
+		break;
+	}
+	lv_label_set_text_fmt(bat_label, "%s %u%%", icon, (unsigned)pct);
+	lv_obj_set_style_text_color(bat_label, lv_color_hex(color), 0);
+}
+
+static void bat_timer_cb(lv_timer_t *timer) { robot_battery_update(); }
+
+static void bat_indicator_create(lv_obj_t *parent) {
+	bat_label = lv_label_create(parent);
+	lv_obj_clear_flag(bat_label, LV_OBJ_FLAG_CLICKABLE);
+	lv_obj_align(bat_label, LV_ALIGN_BOTTOM_RIGHT, -6, -4);
+	robot_battery_update();
+	lv_timer_create(bat_timer_cb, BAT_REFRESH_MS, NULL);
+}
+
 void draw_robot() {
 
 	if (!robot_screen) {
@@ -327,6 +377,9 @@ void draw_robot() {
 		lv_obj_clear_flag(notes_layer,
 						  LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
 		lv_timer_create(notes_timer_cb, 500, NULL);
+
+		/* Indicateur de batterie (sous la zone de clic) */
+		bat_indicator_create(robot_screen);
 
 		/* Mains et zone de clic : créées une seule fois */
 		create_robot_hand(robot_screen);

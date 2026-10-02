@@ -292,14 +292,17 @@ void app_manager_handle_msg(int msg) {
 	case MSG_BAT_OK:
 		ESP_LOGI(TAG, "Batterie OK : %.2f V (%u %%)", BAT_Get_Volts(),
 				 (unsigned)BAT_Get_Percent());
+		robot_battery_update();
 		break;
 	case MSG_BAT_LOW:
 		ESP_LOGW(TAG, "Batterie faible : %.2f V (%u %%)", BAT_Get_Volts(),
 				 (unsigned)BAT_Get_Percent());
+		robot_battery_update();
 		break;
 	case MSG_BAT_CRITICAL:
 		ESP_LOGW(TAG, "Batterie critique : %.2f V (%u %%)", BAT_Get_Volts(),
 				 (unsigned)BAT_Get_Percent());
+		robot_battery_update();
 		break;
 	case MSG_NFC_TAG:
 		app_manager_handle_nfc();
