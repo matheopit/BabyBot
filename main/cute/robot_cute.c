@@ -306,25 +306,34 @@ static void notes_timer_cb(lv_timer_t *timer) {
 #define BAT_REFRESH_MS 5000 /* rafraîchissement du pourcentage */
 #define COLOR_BAT_LOW 0xFFA500
 #define COLOR_BAT_CRITICAL 0xFF3030
+/* Sous ce pourcentage : icône affichée et yeux fatigués. Il faut remonter
+ * au-dessus de BAT_TIRED_PERCENT + BAT_TIRED_HYST pour en sortir (évite de
+ * basculer en boucle autour du seuil) */
+#define BAT_TIRED_PERCENT 20
+#define BAT_TIRED_HYST 5
 
 static lv_obj_t *bat_label = NULL;
+static bool bat_low = false;
 
-/* Met à jour l'icône, le pourcentage et la couleur de l'indicateur */
+/* Met à jour l'indicateur (affiché seulement batterie basse) et l'humeur */
 void robot_battery_update(void) {
 	if (!bat_label)
 		return;
-	if (!BAT_Is_Valid()) {
-		lv_label_set_text(bat_label, LV_SYMBOL_BATTERY_EMPTY " --%");
-		lv_obj_set_style_text_color(bat_label, lv_palette_main(LV_PALETTE_GREY),
-									0);
+	uint8_t pct = BAT_Get_Percent();
+	if (!BAT_Is_Valid())
+		bat_low = false;
+	else if (bat_low)
+		bat_low = pct <= BAT_TIRED_PERCENT + BAT_TIRED_HYST;
+	else
+		bat_low = pct <= BAT_TIRED_PERCENT;
+	app_manager_set_battery_low(bat_low);
+
+	if (!bat_low) {
+		lv_obj_add_flag(bat_label, LV_OBJ_FLAG_HIDDEN);
 		return;
 	}
-	uint8_t pct = BAT_Get_Percent();
-	const char *icon = pct > 80   ? LV_SYMBOL_BATTERY_FULL
-					   : pct > 55 ? LV_SYMBOL_BATTERY_3
-					   : pct > 30 ? LV_SYMBOL_BATTERY_2
-					   : pct > 10 ? LV_SYMBOL_BATTERY_1
-								  : LV_SYMBOL_BATTERY_EMPTY;
+	lv_obj_clear_flag(bat_label, LV_OBJ_FLAG_HIDDEN);
+	const char *icon = pct > 10 ? LV_SYMBOL_BATTERY_1 : LV_SYMBOL_BATTERY_EMPTY;
 	uint32_t color;
 	switch (BAT_Get_State()) {
 	case BAT_STATE_CRITICAL:

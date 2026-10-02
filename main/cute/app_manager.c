@@ -84,8 +84,20 @@ void app_manager_set_mood(mood_t mood) {
 
 	ESP_LOGI(TAG, "Humeur mise à jour : %d", mood);
 }
+/* Batterie basse : le robot a les yeux fatigués quelle que soit l'humeur,
+ * qui est conservée et revient une fois la batterie rechargée */
+static bool g_battery_low = false;
+
+void app_manager_set_battery_low(bool low) {
+	if (low == g_battery_low)
+		return;
+	g_battery_low = low;
+	ESP_LOGI(TAG, "Batterie basse : %s", low ? "oui" : "non");
+	robot_update_mood();
+}
+
 mood_t app_manager_get_mood(){
-	return g_mood;
+	return g_battery_low ? MOOD_TIRED : g_mood;
 }
 // ===============================
 // ALARM
