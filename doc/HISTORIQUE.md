@@ -108,6 +108,7 @@ Récapitulatif des évolutions du projet, jour par jour, reconstitué à partir 
 - USB : pas de light sleep automatique quand l'USB Serial/JTAG est branché, sinon la connexion USB décroche (`1d43e73`).
 - Branche `pwm` mergée dans master, anciennes branches et PR nettoyées.
 - Vérification de mise à jour GitHub lancée sur le cœur 1, pour ne pas faire lagger l'affichage au démarrage (`b473073`).
+- Création de ce fichier `doc/HISTORIQUE.md` (`4841bed`), avec une règle dans CLAUDE.md pour le tenir à jour à chaque demande.
 
 ## Points restés ouverts ou à surveiller
 

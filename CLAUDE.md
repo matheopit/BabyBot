@@ -6,6 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 BabyBot: an ESP32-S3 child nightlight/alarm clock with a 240×320 ST7789T touch screen (CST328), an I2S DAC (PCM5101) for MP3 playback, an SD card, and a PN532 NFC reader. The UI is built with LVGL 8.3. See README.md for the pin mapping and the SD card layout. Code comments, logs and the README are in French, so write new comments in French too.
 
+## Historique du projet
+
+`doc/HISTORIQUE.md` retrace les demandes et évolutions du projet, jour par jour. **Tiens-le à jour à chaque demande qui change le projet** (fonctionnalité, correctif, refactoring, configuration, organisation des branches) :
+- ajoute une puce sous la section du jour (`## JJ/MM : thème`) et crée cette section si elle n'existe pas encore ;
+- écris en français, dans le même style que les puces existantes, avec le hash du commit entre parenthèses quand il existe ;
+- quand tu commites la modification, inclus la mise à jour de `HISTORIQUE.md` dans le même commit ;
+- tiens à jour la section « Points restés ouverts ou à surveiller » : ajoute les problèmes non résolus, retire ceux qui sont réglés.
+
+Les simples questions, explications ou commandes sans effet sur le projet n'y vont pas.
+
 ## Build / flash
 
 ESP-IDF, target `esp32s3`. There are no tests and no lint step other than `.clang-format`: LLVM base, **tabs**, width 4.
