@@ -2,7 +2,14 @@
 
 const static char *ADC_TAG = "ADC";
 
-float BAT_analogVolts = 0;
+volatile float BAT_analogVolts = 0;
+
+// Une ligne de log de la tension toutes les BAT_LOG_PERIOD mesures (1 par s)
+#define BAT_LOG_PERIOD 60
+
+static bat_filter_t bat_filter;
+static volatile bat_state_t bat_state = BAT_STATE_OK;
+static volatile bool bat_valid = false;
 
 /*---------------------------------------------------------------
 		ADC Calibration
@@ -73,8 +80,6 @@ adc_oneshot_unit_handle_t adc1_handle;
 bool do_calibration1_chan3;
 adc_cali_handle_t adc1_cali_chan3_handle = NULL;
 
-int adc_raw[2][10];
-int voltage[2][10];
 void ADC_Init(void) {
 	//-------------ADC1 Init---------------//
 	adc_oneshot_unit_init_cfg_t init_config1 = {
@@ -102,19 +107,81 @@ void ADC_Init(void) {
 	// }
 }
 
-void BAT_Init(void) { ADC_Init(); }
-float BAT_Get_Volts(void) {
-	adc_oneshot_read(adc1_handle, EXAMPLE_ADC1_CHAN, &adc_raw[0][0]);
-	// printf( "ADC%d Channel[%d] Raw Data: %d\r\n", ADC_UNIT_1 + 1,
-	// EXAMPLE_ADC1_CHAN, adc_raw[0][0]);
-	if (do_calibration1_chan3) {
-		ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc1_cali_chan3_handle,
-												adc_raw[0][0], &voltage[0][0]));
-		// printf("ADC%d Channel[%d] Cali Voltage: %d mV\r\n", ADC_UNIT_1 + 1,
-		// EXAMPLE_ADC1_CHAN, voltage[0][0]);
-		BAT_analogVolts =
-			(float)(voltage[0][0] * 3.0 / 1000.0) / Measurement_offset;
-		// printf("BAT voltage : %.2f V\r\n", BAT_analogVolts);
-	}
-	return BAT_analogVolts;
+void BAT_Init(void) {
+	ADC_Init();
+	bat_filter_reset(&bat_filter);
 }
+
+// Moyenne BAT_OVERSAMPLE lectures ADC calibrées et remonte à la tension de
+// la batterie. Renvoie false si aucune lecture n'a abouti.
+static bool BAT_Read_Volts(float *volts) {
+	if (!do_calibration1_chan3) {
+		static bool warned = false;
+		if (!warned) {
+			warned = true;
+			ESP_LOGE(ADC_TAG, "ADC non calibré : tension batterie non mesurée");
+		}
+		return false;
+	}
+
+	int sum_mv = 0;
+	int ok = 0;
+	for (int i = 0; i < BAT_OVERSAMPLE; i++) {
+		int raw = 0;
+		int mv = 0;
+		if (adc_oneshot_read(adc1_handle, EXAMPLE_ADC1_CHAN, &raw) != ESP_OK)
+			continue;
+		if (adc_cali_raw_to_voltage(adc1_cali_chan3_handle, raw, &mv) != ESP_OK)
+			continue;
+		sum_mv += mv;
+		ok++;
+	}
+	if (ok == 0)
+		return false;
+
+	*volts = (float)((double)sum_mv / ok * BAT_DIVIDER_RATIO / 1000.0 /
+					 Measurement_offset);
+	return true;
+}
+
+bool BAT_Update(void) {
+	static uint32_t log_tick = 0;
+	static uint8_t errors = 0;
+
+	float volts;
+	if (!BAT_Read_Volts(&volts)) {
+		// Un seul message au début d'une série d'échecs, puis un par minute
+		if (do_calibration1_chan3 &&
+			(errors == 0 || errors % BAT_LOG_PERIOD == 0))
+			ESP_LOGW(ADC_TAG, "Lecture de la batterie impossible");
+		if (errors < 255)
+			errors++;
+		return false;
+	}
+	errors = 0;
+
+	BAT_analogVolts = bat_filter_push(&bat_filter, volts);
+	bat_valid = true;
+
+	bat_state_t next = bat_state_next(bat_state, BAT_analogVolts);
+	bool changed = next != bat_state;
+	bat_state = next;
+
+	if (changed || log_tick == 0) {
+		ESP_LOGI(ADC_TAG, "Batterie : %.2f V (%u %%), état %s", BAT_analogVolts,
+				 (unsigned)bat_percent_from_volts(BAT_analogVolts),
+				 bat_state_name(bat_state));
+	}
+	log_tick = (log_tick + 1) % BAT_LOG_PERIOD;
+	return changed;
+}
+
+float BAT_Get_Volts(void) { return bat_valid ? BAT_analogVolts : 0; }
+
+uint8_t BAT_Get_Percent(void) {
+	return bat_valid ? bat_percent_from_volts(BAT_analogVolts) : 0;
+}
+
+bat_state_t BAT_Get_State(void) { return bat_state; }
+
+bool BAT_Is_Valid(void) { return bat_valid; }

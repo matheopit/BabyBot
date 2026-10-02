@@ -10,3 +10,6 @@ void robot_update_mood(void);
 /* Affiche ou masque le bouton « Arrêter le réveil » selon l'état du réveil
  * (tâche LVGL uniquement) */
 void robot_alarm_update(void);
+
+/* Rafraîchit l'indicateur de batterie en bas à droite (tâche LVGL uniquement) */
+void robot_battery_update(void);

@@ -75,11 +75,8 @@ uint8_t LCD_Backlight = 70;
 static ledc_channel_config_t ledc_channel;
 void Backlight_Init(void) {
 	ESP_LOGI(TAG_LCD, "Turn off LCD backlight");
-	gpio_config_t bk_gpio_config = {.mode = GPIO_MODE_OUTPUT,
-									.pin_bit_mask =
-										1ULL << EXAMPLE_PIN_NUM_BK_LIGHT};
-	ESP_ERROR_CHECK(gpio_config(&bk_gpio_config));
-
+	// pas de gpio_config() : le LEDC configure lui-même la broche en sortie
+	// (sinon la broche est déjà réservée et le LEDC émet un warning)
 	ledc_timer_config_t ledc_timer = {.duty_resolution = LEDC_TIMER_13_BIT,
 									  .freq_hz = 5000,
 									  .speed_mode = LEDC_LS_MODE,

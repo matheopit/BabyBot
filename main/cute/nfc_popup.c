@@ -99,6 +99,31 @@ static void playlist_start(const char *dir_path) {
 		lv_timer_create(playlist_timer_cb, PLAYLIST_CHECK_MS, NULL);
 }
 
+// Titre de la popup : nom du répertoire, ou du mp3 sans chemin ni extension
+static void popup_title_from_path(char *out, size_t len, const char *path,
+								  bool is_dir) {
+	size_t n = strlen(path);
+	while (n > 1 && path[n - 1] == '/') // ignore un éventuel '/' final
+		n--;
+	size_t start = n;
+	while (start > 0 && path[start - 1] != '/')
+		start--;
+	if (!is_dir) {
+		// Retire l'extension (dernier '.' du nom, s'il n'est pas en tête)
+		for (size_t i = n; i > start + 1; i--) {
+			if (path[i - 1] == '.') {
+				n = i - 1;
+				break;
+			}
+		}
+	}
+	size_t name_len = n - start;
+	if (name_len >= len)
+		name_len = len - 1;
+	memcpy(out, path + start, name_len);
+	out[name_len] = '\0';
+}
+
 static void nfc_popup_close(void) {
 	if (popup_bg == NULL)
 		return;
@@ -200,8 +225,15 @@ void nfc_popup_open(const char *path, bool is_dir) {
 	lv_obj_add_flag(panel, LV_OBJ_FLAG_CLICKABLE); // absorbe le clic
 	lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
 
+	char name[ALARM_SOUND_PATH_LEN];
+	popup_title_from_path(name, sizeof(name), popup_path, is_dir);
+
+	// Nom trop long : défile sur la largeur du panneau
 	lv_obj_t *title = lv_label_create(panel);
-	lv_label_set_text(title, "Tag NFC");
+	lv_label_set_text(title, name[0] != '\0' ? name : "Tag NFC");
+	lv_label_set_long_mode(title, LV_LABEL_LONG_SCROLL_CIRCULAR);
+	lv_obj_set_width(title, lv_pct(100));
+	lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
 	lv_obj_set_style_text_color(title, color, 0);
 	lv_obj_set_style_text_font(title, &lv_font_montserrat_16, 0);
 	lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 0);

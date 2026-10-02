@@ -9,6 +9,10 @@
 #define MSG_TIME_READY 1
 #define MSG_NFC_TAG 2		 // tag posé (voir app_manager_handle_msg)
 #define MSG_NFC_TAG_REMOVED 3 // tag retiré
+#define MSG_FW_READY 4 // nouveau firmware téléchargé sur la SD
+#define MSG_BAT_OK 5   // batterie OK (ou rechargée)
+#define MSG_BAT_LOW 6  // batterie faible
+#define MSG_BAT_CRITICAL 7 // batterie critique
 #define ALARM_SOUND_PATH_LEN 128
 #define VOLUME_DEFAULT 10 // volume sans config.json (0-100)
 extern QueueHandle_t app_msg_queue;
@@ -45,7 +49,8 @@ typedef enum {
 	EVENT_NFC_TAG,		   // data : nfc_tag_t* du tag posé (tâche NFC)
 	EVENT_NFC_TAG_REMOVED, // data : NULL (tâche NFC)
 	EVENT_JSON_UPDATE,
-	EVENT_ALARM_TRIGGER
+	EVENT_ALARM_TRIGGER,
+	EVENT_BATTERY_STATE // data : bat_state_t* du nouvel état (tâche pilotes)
 } app_event_t;
 
 void app_manager_init(void);

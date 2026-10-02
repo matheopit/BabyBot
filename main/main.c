@@ -6,6 +6,7 @@
 #include "Wireless.h"
 #include "app_manager.h"
 #include "esp_pm.h"
+#include "fw_update.h"
 #include "time_sync.h"
 #include <time.h>
 QueueHandle_t app_msg_queue;
@@ -16,11 +17,25 @@ QueueHandle_t app_msg_queue;
 // Délai après lequel on renonce à l'heure et on coupe le Wi-Fi pour ne pas
 // vider la batterie (le réveil ne fonctionnera pas sans heure)
 #define WIFI_GIVE_UP_MS (5 * 60 * 1000)
+// Joue startup.mp3 au démarrage (0 = désactivé)
+#define PLAY_STARTUP_SOUND 0
+
+// La boucle des pilotes tourne à 10 Hz (bouton marche/arrêt) ; la batterie
+// est mesurée une fois sur BAT_UPDATE_EVERY (soit 1 fois par seconde)
+#define BAT_UPDATE_EVERY 10
 
 void Driver_Loop(void *parameter) {
 	Wireless_Init();
+	int bat_tick = 0;
 	while (1) {
-		BAT_Get_Volts();
+		if (++bat_tick >= BAT_UPDATE_EVERY) {
+			bat_tick = 0;
+			if (BAT_Update()) {
+				// Pas de LVGL ici : l'état passe par app_msg_queue
+				bat_state_t state = BAT_Get_State();
+				app_manager_notify(EVENT_BATTERY_STATE, &state);
+			}
+		}
 		PWR_Loop();
 		vTaskDelay(pdMS_TO_TICKS(100));
 	}
@@ -56,6 +71,10 @@ void app_main(void) {
 	Audio_Init();
 	LVGL_Init(); // returns the screen object
 
+	// Firmware en attente sur la SD : on le flashe et on redémarre dessus
+	if (fw_update_pending())
+		fw_update_apply_from_sd();
+
 	/********************* Demo *********************/
 	app_manager_init();
 	app_manager_choose_frame(FRAME_SPLASH_SCREEN);
@@ -63,8 +82,10 @@ void app_main(void) {
 	lv_refr_now(NULL);
 	vTaskDelay(pdMS_TO_TICKS(20)); // fin du dernier transfert DMA
 	LCD_Display_On();
+#if PLAY_STARTUP_SOUND
 	Volume_adjustment(10); // volume fixe pour le son de démarrage
 	Play_Music("/sdcard", "startup.mp3");
+#endif
 	Driver_Init();
 
 	const TickType_t boot_tick = xTaskGetTickCount();
