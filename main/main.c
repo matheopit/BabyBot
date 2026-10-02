@@ -117,6 +117,7 @@ void app_main(void) {
 		}
 
 		wakeup();
+		app_manager_music_check();
 
 		// Écran éteint : boucle plus lente pour laisser le CPU en light sleep
 		// (le toucher reste lu, il suffit à rallumer l'écran)

@@ -62,6 +62,9 @@ void app_manager_set_mood(mood_t mood);
 mood_t app_manager_get_mood(void);
 /* Batterie basse : force les yeux fatigués (tâche LVGL uniquement) */
 void app_manager_set_battery_low(bool low);
+/* Yeux souriants pendant la musique : à appeler à chaque tour de la boucle
+ * principale (tâche LVGL uniquement) */
+void app_manager_music_check(void);
 mood_t app_manager_get_mood();
 void app_manager_set_alarm(int hour, int minute, int days, bool enabled);
 void app_manager_choose_frame(frame_select_t frame);
