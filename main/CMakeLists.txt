@@ -9,6 +9,7 @@ idf_component_register(
                               "./LVGL_Driver/LVGL_Driver.c"
                               "./SD_Card/SD_MMC.c"
                               "./BAT_Driver/BAT_Driver.c"
+                              "./BAT_Driver/BAT_Logic.c"
                               "./PWR_Key/PWR_Key.c"
                               "./Wireless/Wireless.c"
                               "./Wireless/wireless_utils.c"

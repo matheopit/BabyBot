@@ -19,10 +19,22 @@ QueueHandle_t app_msg_queue;
 // Joue startup.mp3 au démarrage (0 = désactivé)
 #define PLAY_STARTUP_SOUND 0
 
+// La boucle des pilotes tourne à 10 Hz (bouton marche/arrêt) ; la batterie
+// est mesurée une fois sur BAT_UPDATE_EVERY (soit 1 fois par seconde)
+#define BAT_UPDATE_EVERY 10
+
 void Driver_Loop(void *parameter) {
 	Wireless_Init();
+	int bat_tick = 0;
 	while (1) {
-		BAT_Get_Volts();
+		if (++bat_tick >= BAT_UPDATE_EVERY) {
+			bat_tick = 0;
+			if (BAT_Update()) {
+				// Pas de LVGL ici : l'état passe par app_msg_queue
+				bat_state_t state = BAT_Get_State();
+				app_manager_notify(EVENT_BATTERY_STATE, &state);
+			}
+		}
 		PWR_Loop();
 		vTaskDelay(pdMS_TO_TICKS(100));
 	}

@@ -1,4 +1,5 @@
 #include "app_manager.h"
+#include "BAT_Driver.h"
 #include "LVGL_Driver.h"
 #include "PCM5101.h"
 #include "Wireless.h"
@@ -288,6 +289,18 @@ void app_manager_handle_msg(int msg) {
 			esp_restart();
 		}
 		break;
+	case MSG_BAT_OK:
+		ESP_LOGI(TAG, "Batterie OK : %.2f V (%u %%)", BAT_Get_Volts(),
+				 (unsigned)BAT_Get_Percent());
+		break;
+	case MSG_BAT_LOW:
+		ESP_LOGW(TAG, "Batterie faible : %.2f V (%u %%)", BAT_Get_Volts(),
+				 (unsigned)BAT_Get_Percent());
+		break;
+	case MSG_BAT_CRITICAL:
+		ESP_LOGW(TAG, "Batterie critique : %.2f V (%u %%)", BAT_Get_Volts(),
+				 (unsigned)BAT_Get_Percent());
+		break;
 	case MSG_NFC_TAG:
 		app_manager_handle_nfc();
 		break;
@@ -315,6 +328,20 @@ void app_manager_notify(app_event_t event, void *data) {
 
 	case EVENT_NFC_TAG_REMOVED:
 		app_manager_post_msg(MSG_NFC_TAG_REMOVED);
+		break;
+
+	case EVENT_BATTERY_STATE:
+		switch (*(const bat_state_t *)data) {
+		case BAT_STATE_OK:
+			app_manager_post_msg(MSG_BAT_OK);
+			break;
+		case BAT_STATE_LOW:
+			app_manager_post_msg(MSG_BAT_LOW);
+			break;
+		case BAT_STATE_CRITICAL:
+			app_manager_post_msg(MSG_BAT_CRITICAL);
+			break;
+		}
 		break;
 
 	case EVENT_JSON_UPDATE:
