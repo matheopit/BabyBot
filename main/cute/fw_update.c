@@ -466,8 +466,9 @@ void fw_update_check_start(void) {
 	if (started)
 		return;
 	started = true;
-	// TLS + cJSON : grosse pile
-	xTaskCreatePinnedToCore(check_task, "FW check", 8192, NULL, 2, NULL, 0);
+	// TLS + cJSON : grosse pile. Cœur 1 : sur le cœur 0, la boucle LVGL
+	// (app_main, priorité 1) serait préemptée pendant le handshake TLS
+	xTaskCreatePinnedToCore(check_task, "FW check", 8192, NULL, 2, NULL, 1);
 }
 
 void fw_update_mark_valid(void) {
