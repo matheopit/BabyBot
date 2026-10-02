@@ -96,8 +96,23 @@ void app_manager_set_battery_low(bool low) {
 	robot_update_mood();
 }
 
+/* Musique en cours (hors sonnerie du réveil) : yeux souriants, voir
+ * app_manager_music_check() */
+static bool g_music_playing = false;
+
+void app_manager_music_check(void) {
+	bool playing = Music_Is_Playing() && !alarm_ringing;
+	if (playing == g_music_playing)
+		return;
+	g_music_playing = playing;
+	ESP_LOGI(TAG, "Musique : %s", playing ? "lecture" : "arrêt");
+	robot_update_mood();
+}
+
 mood_t app_manager_get_mood(){
-	return g_battery_low ? MOOD_TIRED : g_mood;
+	if (g_battery_low)
+		return MOOD_TIRED;
+	return g_music_playing ? MOOD_HAPPY : g_mood;
 }
 // ===============================
 // ALARM

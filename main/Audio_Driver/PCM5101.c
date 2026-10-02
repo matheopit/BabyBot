@@ -426,6 +426,11 @@ uint32_t Music_Elapsed(void) {
 // true quand le morceau en cours est terminé (ou arrêté)
 bool Music_Finished(void) { return s_track_finished; }
 
+// true pendant la lecture (ni en pause, ni arrêtée)
+bool Music_Is_Playing(void) {
+	return audio_player_get_state() == AUDIO_PLAYER_STATE_PLAYING;
+}
+
 // Identifiant du dernier morceau lancé : permet de savoir si un autre
 // module a lancé un morceau entre-temps
 uint32_t Music_Track_Id(void) { return s_track_id; }

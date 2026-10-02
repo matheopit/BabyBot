@@ -109,6 +109,7 @@ Récapitulatif des évolutions du projet, jour par jour, reconstitué à partir 
 - Branche `pwm` mergée dans master, anciennes branches et PR nettoyées.
 - Vérification de mise à jour GitHub lancée sur le cœur 1, pour ne pas faire lagger l'affichage au démarrage (`b473073`).
 - Création de ce fichier `doc/HISTORIQUE.md` (`4841bed`), avec une règle dans CLAUDE.md pour le tenir à jour à chaque demande.
+- Robot : yeux souriants (`MOOD_HAPPY`) tant qu'une musique joue (lecteur ou tag NFC), sauf pendant la sonnerie du réveil ; la batterie basse reste prioritaire (PR `yeux-musique`).
 
 ## Points restés ouverts ou à surveiller
 

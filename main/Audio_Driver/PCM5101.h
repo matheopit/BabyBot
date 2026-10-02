@@ -53,6 +53,7 @@ uint32_t Music_Duration(void);
 uint32_t Music_Elapsed(void);
 uint16_t Music_Energy(void);
 bool Music_Finished(void);
+bool Music_Is_Playing(void);
 uint32_t Music_Track_Id(void);
 const char *Music_Current_Path(void);
 void Volume_adjustment(uint8_t Volume);
