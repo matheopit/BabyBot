@@ -9,6 +9,7 @@
 #define MSG_TIME_READY 1
 #define MSG_NFC_TAG 2		 // tag posé (voir app_manager_handle_msg)
 #define MSG_NFC_TAG_REMOVED 3 // tag retiré
+#define MSG_FW_READY 4 // nouveau firmware téléchargé sur la SD
 #define ALARM_SOUND_PATH_LEN 128
 #define VOLUME_DEFAULT 10 // volume sans config.json (0-100)
 extern QueueHandle_t app_msg_queue;

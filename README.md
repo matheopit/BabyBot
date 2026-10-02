@@ -23,8 +23,9 @@ une horloge, un réglage de réveil, un lecteur MP3 et un lecteur de tags NFC.
    (SNTP `pool.ntp.org`, fuseau Europe/Paris). Sans heure au bout de 20 s
    (pas de Wi-Fi, `wifi.txt` absent…), le robot démarre quand même ; le Wi-Fi
    continue d'essayer en fond et le réveil ne sonne qu'une fois l'heure connue.
-   Le Wi-Fi est coupé dès que l'heure est obtenue, ou au bout de 5 min sans
-   heure pour préserver la batterie.
+   Une fois l'heure obtenue, BabyBot cherche une mise à jour du firmware
+   (voir plus bas) puis coupe le Wi-Fi. Sans heure, le Wi-Fi est coupé au bout
+   de 5 min pour préserver la batterie.
 3. Écran du robot. Un appui n'importe où ouvre le menu circulaire :
    **Réveil**, **Horloge**, **Music**, **BabyBot** (retour au robot).
 4. Lecture NFC en tâche de fond (PN532).
@@ -40,6 +41,7 @@ une horloge, un réglage de réveil, un lecteur MP3 et un lecteur de tags NFC.
 | `*.mp3`       | morceaux pour le lecteur de musique   |
 | `settings/config.json` | réglages sauvegardés par BabyBot : réveil et volume (créé automatiquement) |
 | `settings/nfc_tags.json` | musique associée à chaque tag NFC (voir ci-dessous) |
+| `update/firmware.bin` | firmware à flasher au prochain démarrage (voir « Mise à jour du firmware ») |
 
 `settings/wifi.txt` :
 
@@ -86,6 +88,34 @@ idf.py -p /dev/ttyACM0 flash monitor
 
 Sous Linux/WSL, le fichier de verrouillage des dépendances est
 `dependencies.linux.lock` (`dependencies.lock` contient des chemins Windows).
+
+## Mise à jour du firmware
+
+Au démarrage, une fois l'heure obtenue, BabyBot lit la dernière release de
+[matheopit/BabyBot](https://github.com/matheopit/BabyBot/releases). Si son tag
+(`vX.Y.Z`) est plus récent que la version du firmware (`version.txt`), il
+télécharge l'asset `BabyBot.bin` dans `update/firmware.bin` sur la SD (taille et
+SHA-256 vérifiés), puis redémarre. Au démarrage suivant, l'écran « Mise a jour »
+s'affiche, le fichier est flashé dans la partition OTA libre puis supprimé, et
+BabyBot redémarre sur la nouvelle version.
+
+- Si le nouveau firmware redémarre avant d'afficher le robot, le bootloader
+  revient à l'ancien, et cette version n'est plus téléchargée.
+- Un `.bin` copié à la main dans `update/firmware.bin` est flashé de la même
+  façon, même s'il est plus ancien. Un fichier refusé est renommé en
+  `update/firmware.bad`.
+- Si un réveil sonne, le redémarrage attend le démarrage suivant.
+
+Publier une version (dépôt propre, `gh` connecté) :
+
+```bash
+./release.sh 1.0.1   # version.txt, commit, tag v1.0.1, build, release GitHub
+```
+
+> ⚠️ La table de partitions (`partitions.csv`, deux partitions OTA de 3 Mo) et
+> le bootloader (rollback activé) ne se mettent pas à jour par ce biais. Après
+> un changement de l'un ou de l'autre, il faut reflasher en USB
+> (`idf.py -p /dev/ttyACM0 flash`).
 
 ## VS Code (WSL)
 

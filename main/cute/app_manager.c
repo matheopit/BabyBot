@@ -4,6 +4,8 @@
 #include "Wireless.h"
 #include "cJSON.h"
 #include "draw_function.h"
+#include "esp_system.h"
+#include "fw_update.h"
 #include "esp_log.h"
 #include "lvgl.h"
 #include "nfc_popup.h"
@@ -31,6 +33,7 @@ static uint8_t g_volume = VOLUME_DEFAULT; // 0-100, appliqué au démarrage
 
 static void app_manager_parse_json(const char *json);
 static void app_manager_load_config(void);
+static bool alarm_ringing;
 
 // Widgets LVGL externes
 extern lv_obj_t *eyes_canvas;
@@ -260,6 +263,8 @@ void app_manager_start(void) {
 		return;
 	Volume_adjustment(app_manager_get_volume());
 	app_started = true;
+	// L'UI démarre : le firmware est bon, pas de retour à l'ancien
+	fw_update_mark_valid();
 	app_manager_choose_frame(FRAME_SMILE);
 	xTaskCreatePinnedToCore(nfc_task, "NFC task", 4096, NULL, 4, NULL, 0);
 }
@@ -271,8 +276,17 @@ void app_manager_handle_msg(int msg) {
 	case MSG_TIME_READY:
 		ESP_LOGI(TAG, "Heure OK → changement de frame");
 		app_manager_start();
-		// Le WiFi ne sert qu'à la synchro de l'heure au démarrage
-		WIFI_Stop();
+		// Recherche d'une mise à jour, puis arrêt du Wi-Fi
+		fw_update_check_start();
+		break;
+	case MSG_FW_READY:
+		// Le firmware sera flashé au prochain démarrage
+		if (alarm_ringing) {
+			ESP_LOGI(TAG, "Réveil en cours : mise à jour au prochain démarrage");
+		} else {
+			ESP_LOGI(TAG, "Redémarrage pour la mise à jour");
+			esp_restart();
+		}
 		break;
 	case MSG_NFC_TAG:
 		app_manager_handle_nfc();
