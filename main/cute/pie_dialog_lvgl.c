@@ -62,7 +62,7 @@
 #include "pie_icons.h"
 
 static const lv_img_dsc_t *section_icons[4] = {
-	&icon_section_1, &icon_section_2, &icon_section_3, &icon_section_4};
+	&icon_section_5, &icon_section_2, &icon_section_3, &icon_section_4};
 #endif
 
 /* ---------- Config des sections ---------- */

@@ -15,5 +15,6 @@ LV_IMG_DECLARE(icon_section_1);
 LV_IMG_DECLARE(icon_section_2);
 LV_IMG_DECLARE(icon_section_3);
 LV_IMG_DECLARE(icon_section_4);
+LV_IMG_DECLARE(icon_section_5);
 
 #endif /* PIE_ICONS_H */

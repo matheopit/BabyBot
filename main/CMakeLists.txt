@@ -31,6 +31,7 @@ idf_component_register(
                               "./ressources/reveil_png.c"
                               "./ressources/robot_png.c"
                               "./ressources/musique_png.c"
+                              "./ressources/settings_png.c"
                               "./cute/mp3_player_lvgl.c"
                               "./cute/playlist_manager.c"
                               "./cute/music_implement.c"
