@@ -114,6 +114,7 @@ Récapitulatif des évolutions du projet, jour par jour, reconstitué à partir 
 ## 04/10 : organisation du code
 
 - `fw_update.[ch]` déplacés de `main/cute/` vers `main/ota/` (CMakeLists et CLAUDE.md mis à jour).
+- Son de démarrage réactivé (`PLAY_STARTUP_SOUND` à 1).
 
 ## Points restés ouverts ou à surveiller
 

@@ -18,7 +18,7 @@ QueueHandle_t app_msg_queue;
 // vider la batterie (le réveil ne fonctionnera pas sans heure)
 #define WIFI_GIVE_UP_MS (5 * 60 * 1000)
 // Joue startup.mp3 au démarrage (0 = désactivé)
-#define PLAY_STARTUP_SOUND 0
+#define PLAY_STARTUP_SOUND 1
 
 // La boucle des pilotes tourne à 10 Hz (bouton marche/arrêt) ; la batterie
 // est mesurée une fois sur BAT_UPDATE_EVERY (soit 1 fois par seconde)
