@@ -245,7 +245,7 @@ void ui_alarm_screen_create(void) {
 		// Toggle ON/OFF
 		toggle_alarm = lv_switch_create(alarm_screen);
 		lv_obj_align(toggle_alarm, LV_ALIGN_TOP_RIGHT, -10, 10);
-		lv_obj_set_style_bg_color(toggle_alarm, lv_color_hex(0x4DA6FF),
+		lv_obj_set_style_bg_color(toggle_alarm, lv_color_hex(COLOR_MAIN),
 								  LV_PART_INDICATOR);
 		lv_obj_add_event_cb(toggle_alarm, toggle_event, LV_EVENT_VALUE_CHANGED,
 							NULL);

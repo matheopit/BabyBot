@@ -6,7 +6,7 @@
  * - Tout est dessine en traits (LV_PART lines / bordures), aucune surface
  *   remplie sauf le petit point de pivot central : cadran = cercle en
  *   contour seul, graduations = lignes, aiguilles = lignes.
- * - Couleur unique : 0x4DA6FF.
+ * - Couleur unique : COLOR_MAIN.
  * - Animation : les aiguilles sont recalculees chaque seconde via un
  *   lv_timer (mouvement "pas a pas" realiste d'horloge, pas de sweep
  *   continu -- voir la note en bas de fichier pour un balayage fluide).
@@ -32,6 +32,7 @@
  * (ex: HAL_RTC_GetTime() sur STM32).
  */
 
+#include "app_manager.h"
 #include "draw_function.h"
 #include "lvgl.h"
 #include "pie_icons.h"
@@ -49,7 +50,6 @@
 #define CLOCK_RADIUS 90
 #define CLOCK_DIAMETER (CLOCK_RADIUS * 2)
 
-#define CLOCK_COLOR_HEX 0x4DA6FF
 
 /* Longueurs des aiguilles, en fraction du rayon */
 #define HAND_LEN_HOUR (CLOCK_RADIUS * 0.50f)
@@ -298,7 +298,7 @@ static void bottom_zone_create(lv_obj_t *parent) {
  * @param parent Ecran ou conteneur parent (ex: lv_scr_act())
  */
 void wireframe_clock_create(lv_obj_t *parent) {
-	clock_color = lv_color_hex(CLOCK_COLOR_HEX);
+	clock_color = lv_color_hex(COLOR_MAIN);
 
 	lv_obj_set_style_bg_color(parent, lv_color_black(), 0);
 	lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, 0);

@@ -1,7 +1,6 @@
 #include "app_manager.h"
 #include "esp_heap_caps.h"
 #include "lvgl.h"
-#define BABYBOT_COLOR 0x4DA6FF
 
 static lv_obj_t *splash_scr;
 static lv_obj_t *label_babybot;

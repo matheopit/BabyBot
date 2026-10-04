@@ -1,7 +1,7 @@
 /**
  * @file mp3_player_lvgl.c
  * @brief Lecteur MP3 LVGL, meme theme "fil de fer" que les autres frames
- *        (fond noir, contours/texte en 0x4DA6FF, pas de remplissage
+ *        (fond noir, contours/texte en COLOR_MAIN, pas de remplissage
  *        colore sauf la barre de progression).
  *
  * Contenu de l'ecran :
@@ -43,7 +43,6 @@
 #define SCREEN_W 240
 #define SCREEN_H 320
 
-#define WIRE_COLOR_HEX 0x4DA6FF
 
 /* Empilement vertical des elements (haut -> bas), en offset depuis le
  * haut de l'ecran. A ajuster si vous changez la taille d'un element. */
@@ -543,11 +542,11 @@ void mp3_player_set_bottom_click_cb(mp3_player_bottom_click_cb_t cb) {
 /* ---------- Construction de l'ecran lecteur ---------- */
 
 /**
- * @brief Construit l'ecran du lecteur MP3 (style fil de fer 0x4DA6FF).
+ * @brief Construit l'ecran du lecteur MP3 (style fil de fer COLOR_MAIN).
  * @param scr Ecran ou conteneur parent (ex: lv_scr_act())
  */
 void mp3_player_create(lv_obj_t *scr) {
-	wire_color = lv_color_hex(WIRE_COLOR_HEX);
+	wire_color = lv_color_hex(COLOR_MAIN);
 
 	lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
 	lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);

@@ -2,13 +2,13 @@
  * @file pie_dialog_lvgl.c
  * @brief Roue "camembert" (4 sections) dans une boite de dialogue modale
  *        LVGL, avec le meme style "fil de fer" que l'horloge : fond noir,
- *        traits/contours uniquement, couleur unique 0x4DA6FF.
+ *        traits/contours uniquement, couleur unique COLOR_MAIN.
  *
  * Ecran cible : 240 x 320.
  *
  * Style :
  *   - Fond du dialogue : noir pur.
- *   - Panneau : contour seul (bordure 0x4DA6FF), pas de remplissage colore.
+ *   - Panneau : contour seul (bordure COLOR_MAIN), pas de remplissage colore.
  *   - Roue : cercle en contour + 4 rayons (spokes) qui delimitent les
  *     sections -- comme un camembert dessine au trait, pas rempli.
  *     Une section est "allumee" (remplissage semi-transparent de la meme
@@ -33,7 +33,6 @@
 #define PIE_RADIUS 90
 #define PIE_DIAMETER (PIE_RADIUS * 2)
 
-#define WIRE_COLOR_HEX 0x4DA6FF
 
 #define DIALOG_TITLE_H 30
 #define DIALOG_PADDING 16
@@ -372,7 +371,7 @@ void pie_dialog_close(void) {
 
 /**
  * @brief Ouvre la boite de dialogue contenant la roue camembert, style
- *        fil de fer (fond noir, contours 0x4DA6FF).
+ *        fil de fer (fond noir, contours COLOR_MAIN).
  * @param parent_scr Ecran parent (ex: lv_scr_act())
  */
 void pie_dialog_open(lv_obj_t *parent_scr) {
@@ -382,7 +381,7 @@ void pie_dialog_open(lv_obj_t *parent_scr) {
 	if (app_manager_alarm_ringing())
 		return;
 
-	wire_color = lv_color_hex(WIRE_COLOR_HEX);
+	wire_color = lv_color_hex(COLOR_MAIN);
 
 	/* 1) Fond modal plein ecran : noir, semi-transparent, cliquable pour fermer
 	 */
