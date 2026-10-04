@@ -25,7 +25,9 @@ typedef enum {
 	FRAME_MUSIC,
 	FRAME_HORLOGE,
 	FRAME_SMILE_SETTINGS,
-	FRAME_SPLASH_SCREEN
+	FRAME_SPLASH_SCREEN,
+	FRAME_SETTINGS, // menu Paramètres (Réveil / Version)
+	FRAME_VERSION
 } frame_select_t;
 
 typedef struct {

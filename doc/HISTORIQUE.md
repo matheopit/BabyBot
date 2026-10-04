@@ -119,6 +119,7 @@ Récapitulatif des évolutions du projet, jour par jour, reconstitué à partir 
 - Écran de mise à jour : la barre de progression restait figée, la boucle LVGL de `fw_update_apply_from_sd()` n'appelait pas `LVGL_Tick_Update()` (le tick LVGL est manuel depuis le light sleep), donc le timer de rafraîchissement ne se déclenchait jamais.
 - Écran de mise à jour extrait de `fw_update.c` dans `ota/fw_update_lvgl.[ch]` : `fw_update.c` ne contient plus d'appel LVGL, la tâche de flash transmet l'avancement par `fw_update_lvgl_set_percent()` / `fw_update_lvgl_set_error()` (`846b2eb`).
 - Couleur principale : les defines locaux identiques (`BABYBOT_COLOR`, `WIRE_COLOR_HEX`, `CLOCK_COLOR_HEX`) et le `0x4DA6FF` en dur de `wakeup_settings.c` remplacés par `COLOR_MAIN` (`app_manager.h`) (`2f38f11`).
+- Menu camembert : la section « Reveil » devient « Parametres » et ouvre un nouvel écran (`cute/settings_menu.[ch]`, `FRAME_SETTINGS`) avec deux boutons : « Reveil » (réglages du réveil existants) et « Version » (nouvel écran `FRAME_VERSION`, dans son propre fichier `cute/version_screen.[ch]`, qui affiche la version du firmware avec un bouton « Retour »). Le fond et les boutons fil de fer sont partagés via `settings_create_screen()` / `settings_create_button()`.
 
 ## Points restés ouverts ou à surveiller
 

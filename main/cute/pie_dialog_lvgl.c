@@ -76,7 +76,7 @@ typedef struct {
 } pie_section_cfg_t;
 
 static const pie_section_cfg_t sections_cfg[4] = {
-	{270, 0, "Reveil", 35, -35},	 /* haut-droit  */
+	{270, 0, "Parametres", 35, -35},	 /* haut-droit  */
 	{0, 90, "Horloge", 35, 35},		 /* bas-droit   */
 	{90, 180, "Music", -35, 35},	 /* bas-gauche  */
 	{180, 270, "BabyBot", -35, -35}, /* haut-gauche */
@@ -101,7 +101,7 @@ static void pie_section_action(uint32_t idx) {
 
 	switch (idx) {
 	case 0:
-		app_manager_choose_frame(FRAME_WAKEUP_SETTINGS);
+		app_manager_choose_frame(FRAME_SETTINGS);
 		break;
 	case 1:
 		app_manager_choose_frame(FRAME_HORLOGE);

@@ -27,6 +27,8 @@ idf_component_register(
                               "./ota/fw_update_lvgl.c"
                               "./cute/wireframe_clock_lvgl.c"
                               "./cute/baby_splash_screen.c"
+                              "./cute/settings_menu.c"
+                              "./cute/version_screen.c"
                               "./ressources/horloge_png.c"
                               "./ressources/reveil_png.c"
                               "./ressources/robot_png.c"

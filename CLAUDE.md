@@ -53,6 +53,8 @@ idf.py -p /dev/ttyACM0 flash monitor
 - `wireframe_clock_lvgl.c`: clock
 - `mp3_player_lvgl.c`: music player
 - `baby_splash_screen.c`: splash screen
+- `settings_menu.c`: settings menu (Alarm / Version buttons) and the shared settings screen/button helpers
+- `version_screen.c`: firmware version screen
 
 Prototypes for several of these are in `draw_function.h`. Touching anywhere opens the circular menu `pie_dialog_lvgl.c` (`pie_dialog_open`), which calls `app_manager_choose_frame`. To add a screen: add a `FRAME_*` enum value, add a case in `app_manager_choose_frame`, and add an entry in the pie menu.
 

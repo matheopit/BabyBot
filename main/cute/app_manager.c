@@ -13,6 +13,8 @@
 #include "nfc_tags.h"
 #include "ntag_read.h"
 #include "robot_cute.h"
+#include "settings_menu.h"
+#include "version_screen.h"
 #include "wakeup_settings.h"
 #include <errno.h>
 #include <stdio.h>
@@ -390,6 +392,12 @@ void app_manager_choose_frame(frame_select_t frame) {
 		break;
 	case FRAME_SPLASH_SCREEN:
 		babybot_splash_create();
+		break;
+	case FRAME_SETTINGS:
+		settings_menu_create();
+		break;
+	case FRAME_VERSION:
+		version_screen_create();
 		break;
 	default:
 		break;
