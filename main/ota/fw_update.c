@@ -1,4 +1,5 @@
 #include "fw_update.h"
+#include "LVGL_Driver.h"
 #include "ST7789.h"
 #include "Wireless.h"
 #include "app_manager.h"
@@ -221,6 +222,9 @@ void fw_update_apply_from_sd(void) {
 	// Seule boucle LVGL jusqu'au redémarrage (pas de Wi-Fi, NFC ni réveil)
 	while (1) {
 		vTaskDelay(pdMS_TO_TICKS(10));
+		// Le tick LVGL n'avance que si on l'appelle (voir LVGL_Tick_Update) :
+		// sans lui, le timer de la barre ne se déclenche jamais
+		LVGL_Tick_Update();
 		lv_timer_handler();
 	}
 }

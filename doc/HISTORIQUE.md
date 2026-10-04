@@ -116,6 +116,7 @@ Récapitulatif des évolutions du projet, jour par jour, reconstitué à partir 
 - `fw_update.[ch]` déplacés de `main/cute/` vers `main/ota/` (CMakeLists et CLAUDE.md mis à jour).
 - Son de démarrage réactivé (`PLAY_STARTUP_SOUND` à 1) (`fa4bd66`).
 - Mise à jour : téléchargement HTTPS interrompu par `esp-aes: Failed to allocate memory` (buffers DMA en RAM interne épuisés, mbedTLS étant en PSRAM). AES matériel désactivé (`CONFIG_MBEDTLS_HARDWARE_AES`), l'AES logiciel n'a pas besoin de RAM DMA.
+- Écran de mise à jour : la barre de progression restait figée, la boucle LVGL de `fw_update_apply_from_sd()` n'appelait pas `LVGL_Tick_Update()` (le tick LVGL est manuel depuis le light sleep), donc le timer de rafraîchissement ne se déclenchait jamais.
 
 ## Points restés ouverts ou à surveiller
 
