@@ -114,7 +114,8 @@ Récapitulatif des évolutions du projet, jour par jour, reconstitué à partir 
 ## 04/10 : organisation du code
 
 - `fw_update.[ch]` déplacés de `main/cute/` vers `main/ota/` (CMakeLists et CLAUDE.md mis à jour).
-- Son de démarrage réactivé (`PLAY_STARTUP_SOUND` à 1).
+- Son de démarrage réactivé (`PLAY_STARTUP_SOUND` à 1) (`fa4bd66`).
+- Mise à jour : téléchargement HTTPS interrompu par `esp-aes: Failed to allocate memory` (buffers DMA en RAM interne épuisés, mbedTLS étant en PSRAM). AES matériel désactivé (`CONFIG_MBEDTLS_HARDWARE_AES`), l'AES logiciel n'a pas besoin de RAM DMA.
 
 ## Points restés ouverts ou à surveiller
 
