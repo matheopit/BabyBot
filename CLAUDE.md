@@ -33,7 +33,7 @@ idf.py -p /dev/ttyACM0 flash monitor
 
 ## Architecture
 
-`main/` holds one directory per hardware driver (`Audio_Driver`, `LCD_Driver`, `Touch_Driver`, `LVGL_Driver`, `SD_Card`, `BAT_Driver`, `PWR_Key`, `Wireless`, `NFC_Tag`). All application and UI code lives in `main/cute/`.
+`main/` holds one directory per hardware driver (`Audio_Driver`, `LCD_Driver`, `Touch_Driver`, `LVGL_Driver`, `SD_Card`, `BAT_Driver`, `PWR_Key`, `Wireless`, `NFC_Tag`), plus `ota/` for the firmware update. All other application and UI code lives in `main/cute/`.
 
 **Tasks and threading** (`main/main.c`):
 - `app_main` initializes SD → LCD → Audio → LVGL → `app_manager_init()` (loads `/sdcard/settings/config.json`), shows the splash screen and plays `startup.mp3`. It then loops forever. Each pass it drains `app_msg_queue`, calls `wakeup()` (the alarm check) and calls `lv_timer_handler()`. **This loop is the only LVGL task, and there is no LVGL mutex.** Do not call `lv_*` from any other task. Send a message on `app_msg_queue` instead.
@@ -58,6 +58,6 @@ Prototypes for several of these are in `draw_function.h`. Touching anywhere open
 
 `main/ressources/*_png.c` files (`robot_png.c`, `horloge_png.c`, …) are generated LVGL image arrays (menu icons, declared in `pie_icons.h`). Do not edit them by hand.
 
-**Firmware update** (`cute/fw_update.[ch]`): on `MSG_TIME_READY`, `fw_update_check_start()` queries the latest GitHub release of `matheopit/BabyBot`. If the `vX.Y.Z` tag is newer than `version.txt`, it downloads the `BabyBot.bin` asset to `/sdcard/update/firmware.bin`, stops Wi-Fi and posts `MSG_FW_READY` (→ `esp_restart`). At boot, if that file exists, `app_main` calls `fw_update_apply_from_sd()` before anything else: it shows a progress screen, writes to the next OTA partition, deletes the file and restarts. Bootloader rollback is enabled, and `app_manager_start()` marks the app valid. `partitions.csv` has `ota_0`/`ota_1` of 3 MB each. Changing the partitions or the bootloader still requires a USB flash. `./release.sh X.Y.Z` bumps `version.txt`, tags, builds and creates the GitHub release.
+**Firmware update** (`ota/fw_update.[ch]`): on `MSG_TIME_READY`, `fw_update_check_start()` queries the latest GitHub release of `matheopit/BabyBot`. If the `vX.Y.Z` tag is newer than `version.txt`, it downloads the `BabyBot.bin` asset to `/sdcard/update/firmware.bin`, stops Wi-Fi and posts `MSG_FW_READY` (→ `esp_restart`). At boot, if that file exists, `app_main` calls `fw_update_apply_from_sd()` before anything else: it shows a progress screen, writes to the next OTA partition, deletes the file and restarts. Bootloader rollback is enabled, and `app_manager_start()` marks the app valid. `partitions.csv` has `ota_0`/`ota_1` of 3 MB each. Changing the partitions or the bootloader still requires a USB flash. `./release.sh X.Y.Z` bumps `version.txt`, tags, builds and creates the GitHub release.
 
 **Audio**: `PCM5101.c` wraps `esp-audio-player`: `Play_Music(dir, file)`, `Play_Music_ex(path)`, `Music_stop/pause/resume` and `Volume_adjustment`.

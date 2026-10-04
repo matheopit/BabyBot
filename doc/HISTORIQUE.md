@@ -111,6 +111,10 @@ Récapitulatif des évolutions du projet, jour par jour, reconstitué à partir 
 - Création de ce fichier `doc/HISTORIQUE.md` (`4841bed`), avec une règle dans CLAUDE.md pour le tenir à jour à chaque demande.
 - Lecteur MP3 : la fenêtre de navigation dans les dossiers occupe tout l'écran à 2 % près (235×313 au lieu de 208×260), la liste s'agrandit en conséquence.
 
+## 04/10 : organisation du code
+
+- `fw_update.[ch]` déplacés de `main/cute/` vers `main/ota/` (CMakeLists et CLAUDE.md mis à jour).
+
 ## Points restés ouverts ou à surveiller
 
 - **PN532** : instabilité avec le power-down (voir l'issue GitHub). Pas de broche RESET sur la carte.
