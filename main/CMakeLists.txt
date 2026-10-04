@@ -24,6 +24,7 @@ idf_component_register(
                               "./cute/nfc_tags.c"
                               "./cute/time_sync.c"
                               "./ota/fw_update.c"
+                              "./ota/fw_update_lvgl.c"
                               "./cute/wireframe_clock_lvgl.c"
                               "./cute/baby_splash_screen.c"
                               "./ressources/horloge_png.c"
