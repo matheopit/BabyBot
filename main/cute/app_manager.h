@@ -59,7 +59,6 @@ void app_manager_handle_msg(int msg);
 void app_manager_start(void);
 bool app_manager_is_started(void);
 void app_manager_set_mood(mood_t mood);
-mood_t app_manager_get_mood(void);
 /* Batterie basse : force les yeux fatigués (tâche LVGL uniquement) */
 void app_manager_set_battery_low(bool low);
 mood_t app_manager_get_mood();

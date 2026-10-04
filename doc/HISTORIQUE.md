@@ -109,6 +109,7 @@ Récapitulatif des évolutions du projet, jour par jour, reconstitué à partir 
 - Branche `pwm` mergée dans master, anciennes branches et PR nettoyées.
 - Vérification de mise à jour GitHub lancée sur le cœur 1, pour ne pas faire lagger l'affichage au démarrage (`b473073`).
 - Création de ce fichier `doc/HISTORIQUE.md` (`4841bed`), avec une règle dans CLAUDE.md pour le tenir à jour à chaque demande.
+- Lecteur MP3 : la fenêtre de navigation dans les dossiers occupe tout l'écran à 2 % près (235×313 au lieu de 208×260), la liste s'agrandit en conséquence.
 
 ## Points restés ouverts ou à surveiller
 

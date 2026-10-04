@@ -417,21 +417,25 @@ static void browse_open(lv_obj_t *parent_scr) {
 
 	browse_panel = lv_obj_create(browse_modal_bg);
 	lv_obj_remove_style_all(browse_panel);
-	lv_obj_set_size(browse_panel, 208, 260);
+	/* Dialogue a la taille de l'ecran, a 2 % pres */
+	const lv_coord_t panel_w = SCREEN_W * 98 / 100;
+	const lv_coord_t panel_h = SCREEN_H * 98 / 100;
+	const lv_coord_t panel_pad = 12;
+	lv_obj_set_size(browse_panel, panel_w, panel_h);
 	lv_obj_align(browse_panel, LV_ALIGN_CENTER, 0, 0);
 	lv_obj_set_style_bg_color(browse_panel, lv_color_black(), 0);
 	lv_obj_set_style_bg_opa(browse_panel, LV_OPA_COVER, 0);
 	lv_obj_set_style_radius(browse_panel, 8, 0);
 	lv_obj_set_style_border_width(browse_panel, 1, 0);
 	lv_obj_set_style_border_color(browse_panel, wire_color, 0);
-	lv_obj_set_style_pad_all(browse_panel, 12, 0);
+	lv_obj_set_style_pad_all(browse_panel, panel_pad, 0);
 	lv_obj_add_flag(browse_panel, LV_OBJ_FLAG_CLICKABLE);
 	lv_obj_clear_flag(browse_panel, LV_OBJ_FLAG_SCROLLABLE);
 
 	/* Titre = nom du dossier courant */
 	browse_title_label = lv_label_create(browse_panel);
 	lv_label_set_long_mode(browse_title_label, LV_LABEL_LONG_DOT);
-	lv_obj_set_width(browse_title_label, 150);
+	lv_obj_set_width(browse_title_label, panel_w - 2 * panel_pad - 30);
 	lv_obj_set_style_text_color(browse_title_label, wire_color, 0);
 	lv_obj_align(browse_title_label, LV_ALIGN_TOP_LEFT, 0, 0);
 	lv_obj_clear_flag(browse_title_label, LV_OBJ_FLAG_CLICKABLE);
@@ -442,7 +446,8 @@ static void browse_open(lv_obj_t *parent_scr) {
 
 	browse_list_container = lv_obj_create(browse_panel);
 	lv_obj_remove_style_all(browse_list_container);
-	lv_obj_set_size(browse_list_container, lv_pct(100), 200);
+	lv_obj_set_size(browse_list_container, lv_pct(100),
+					panel_h - 2 * panel_pad - 36);
 	lv_obj_align(browse_list_container, LV_ALIGN_BOTTOM_MID, 0, 0);
 	lv_obj_set_flex_flow(browse_list_container, LV_FLEX_FLOW_COLUMN);
 	lv_obj_set_style_bg_opa(browse_list_container, LV_OPA_TRANSP, 0);
